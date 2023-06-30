@@ -1,5 +1,5 @@
 ---
-title: "20230627 paper figures"
+title: "paper figures"
 output: 
   html_document:
     df_print: paged
@@ -39,12 +39,12 @@ load our own PBMC data after projecting on to the reference
 - K783496_PBMC
 - K693104_PBMC
 - K955601_PBMC
-- P1_1_PBMC (re-sequenced)
+- P1_1_PBMC
 - P1_2_PBMC
 - P3_1_PBMC
 - P3_2_PBMC
 - P8_1_PBMC
-- P8_2_PBMC (re-sequenced)
+- P8_2_PBMC
 - P22_1_PBMC
 - P22_2_PBMC
 - P23_1_PBMC
