@@ -1,0 +1,91 @@
+ONTOLOGY SOURCE REFERENCE
+Term Source Name	OBI	NCBITAXON
+Term Source File	http://data.bioontology.org/ontologies/OBI	http://data.bioontology.org/ontologies/NCBITAXON
+Term Source Version	35	10
+Term Source Description	Ontology for Biomedical Investigations	National Center for Biotechnology Information (NCBI) Organismal Classification
+INVESTIGATION
+Investigation Identifier	1527494770912
+Investigation Title	Investigation
+Investigation Description	
+Investigation Submission Date	
+Investigation Public Release Date	
+INVESTIGATION PUBLICATIONS
+Investigation PubMed ID	
+Investigation Publication DOI	
+Investigation Publication Author List	
+Investigation Publication Title	
+Investigation Publication Status	
+Investigation Publication Status Term Accession Number	
+Investigation Publication Status Term Source REF	
+INVESTIGATION CONTACTS
+Investigation Person Last Name	
+Investigation Person First Name	
+Investigation Person Mid Initials	
+Investigation Person Email	
+Investigation Person Phone	
+Investigation Person Fax	
+Investigation Person Address	
+Investigation Person Affiliation	
+Investigation Person Roles	
+Investigation Person Roles Term Accession Number	
+Investigation Person Roles Term Source REF	
+STUDY
+Study Identifier	2020_Hegazy_IBD
+Study Title	2020 Hegazy IBD
+Study Description	
+Study Submission Date	
+Study Public Release Date	
+Study File Name	s_hegazy_IBD.txt
+STUDY DESIGN DESCRIPTORS
+Study Design Type	
+Study Design Type Term Accession Number	
+Study Design Type Term Source REF	
+STUDY PUBLICATIONS
+Study PubMed ID	
+Study Publication DOI	
+Study Publication Author List	
+Study Publication Title	
+Study Publication Status	
+Study Publication Status Term Accession Number	
+Study Publication Status Term Source REF	
+STUDY FACTORS
+Study Factor Name	
+Study Factor Type	
+Study Factor Type Term Accession Number	
+Study Factor Type Term Source REF	
+STUDY ASSAYS
+Study Assay File Name	a_hegazy_IBD_totalseq_nucleotide_sequencing.txt
+Study Assay Measurement Type	transcription profiling
+Study Assay Measurement Type Term Accession Number	http://purl.obolibrary.org/obo/OBI_0000424
+Study Assay Measurement Type Term Source REF	OBI
+Study Assay Technology Type	nucleotide sequencing
+Study Assay Technology Type Term Accession Number	http://purl.obolibrary.org/obo/OBI_0000626
+Study Assay Technology Type Term Source REF	OBI
+Study Assay Technology Platform	
+STUDY PROTOCOLS
+Study Protocol Name	Sample collection	Dissociation scRNAseq	Nucleic acid sequencing scRNAseq	Library construction totalSeq
+Study Protocol Type	Sample collection	Dissociation scRNAseq	Nucleic acid sequencing scRNAseq	Library construction totalSeq
+Study Protocol Type Term Accession Number				
+Study Protocol Type Term Source REF				
+Study Protocol Description				
+Study Protocol URI				
+Study Protocol Version				
+Study Protocol Parameters Name		Dissociation method;Dissociation freetext;Removal debris;Removal dead cell;Removal ab cell;Cell fixation;Cell count;Cell viability	Platform;Instrument model;Sequencing kit	Library kit;QC cell load recovery;QC tape fragment size bp;QC kapa size corrected nM;Multiplex source;Multiplex sample;Multiplex sample tag;Library name Gene Expression;Library name Antibody Capture;Library name VDJ-T;Library name VDJ-B;Sclib freetext
+Study Protocol Parameters Name Term Accession Number		;;;;;;;	;;	;;;;;;;;;;;
+Study Protocol Parameters Name Term Source REF		;;;;;;;	;;	;;;;;;;;;;;
+Study Protocol Components Name				
+Study Protocol Components Type				
+Study Protocol Components Type Term Accession Number				
+Study Protocol Components Type Term Source REF				
+STUDY CONTACTS
+Study Person Last Name	
+Study Person First Name	
+Study Person Mid Initials	
+Study Person Email	
+Study Person Phone	
+Study Person Fax	
+Study Person Address	
+Study Person Affiliation	
+Study Person Roles	
+Study Person Roles Term Accession Number	
+Study Person Roles Term Source REF	

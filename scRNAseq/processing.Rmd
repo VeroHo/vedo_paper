@@ -1,0 +1,283 @@
+---
+title: "data processing"
+output: 
+  html_document:
+    df_print: paged
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache=TRUE, cache.lazy=FALSE, message=FALSE, warning=FALSE)
+library(sctransform)
+library(Seurat)
+library(SeuratDisk)
+library(ggplot2)
+library(cowplot)
+library(ggrepel)
+library(dplyr)
+library(scRepertoire)
+library(tidyr)
+library(cluster)
+library(plyr)
+library(ComplexHeatmap)
+library(dendextend)
+options(future.globals.maxSize = 10 * 1024 * 1024^2)
+path <- getwd()
+```
+
+we follow the [Seurat vignette](https://satijalab.org/seurat/v4.0/reference_mapping.html) and use their PBMC data as reference
+
+```{r get_reference, fig.width=6,fig.height=5}
+reference <- LoadH5Seurat(file.path(path, 'seurat', "pbmc_multimodal.h5seurat"))
+```
+
+load PBMC data; take all cells with less than 10% mitochondrial RNA and between 250 and 5000 genes
+
+- K456985_PBMC
+- K783496_PBMC
+- K693104_PBMC
+- K955601_PBMC
+- P1_1_PBMC 
+- P1_2_PBMC
+- P3_1_PBMC
+- P3_2_PBMC
+- P8_1_PBMC
+- P8_2_PBMC 
+- P22_1_PBMC
+- P22_2_PBMC
+- P23_1_PBMC
+- P23_2_PBMC
+- P25_1_PBMC
+- P25_2_PBMC
+- P27_1_PBMC
+- P27_2_PBMC
+- P28_1_PBMC
+- P28_2_PBMC
+- P22_P23_K783496_CD4
+- P8_P3_K456985_CD4
+- P27_P28_K693104_CD4
+- P12_1_PBMC
+- P12_2_PBMC
+- P26_1_PBMC
+- P26_2_PBMC
+- K496398_PBMC
+- P12_P26_K496398_CD4
+
+```{r get_data}
+samples <- c('K456985_PBMC','K783496_PBMC','P1_1_PBMC','P22_1_PBMC','P22_P23_K783496_CD4','P23_2_PBMC','P25_2_PBMC','P27_2_PBMC',
+             'P28_1_PBMC','P3_1_PBMC','P8_1_PBMC','P8_P3_K456985_CD4','K693104_PBMC','K955601_PBMC','P1_2_PBMC','P22_2_PBMC',
+             'P23_1_PBMC','P25_1_PBMC','P27_1_PBMC','P27_P28_K693104_CD4','P28_2_PBMC','P3_2_PBMC','P8_2_PBMC',
+             'P12_1_PBMC','P12_2_PBMC','P26_1_PBMC','P26_2_PBMC','K496398_PBMC','P12_P26_K496398_CD4')
+
+pbmc <- list()
+for (sample in samples) {
+  dge <- Read10X_h5(file.path(path,'cellranger',paste0(sample,'_filtered_feature_bc_matrix.h5')))
+  sobj <- CreateSeuratObject(counts = dge[['Gene Expression']], project=sample)
+  sobj[['pct.mito']] <- PercentageFeatureSet(sobj, pattern='^MT-')
+  sobj <- subset(sobj, (pct.mito < 10) & (nFeature_RNA <= 5000) & (nFeature_RNA >= 250))
+  capture.output(sobj <- SCTransform(sobj, verbose = FALSE),file='/dev/null')
+  cells <- colnames(sobj)
+  row.names(dge[['Antibody Capture']]) <- gsub('_TotalSeqC','',row.names(dge[['Antibody Capture']]))
+  hashtags <- grepl('^Hashtag_[1234]',row.names(dge[['Antibody Capture']]))
+  sobj[["orig_ADT"]] <- CreateAssayObject(counts = dge[['Antibody Capture']][!hashtags,cells,drop=FALSE])
+  sobj <- NormalizeData(sobj, normalization.method='CLR', assay='orig_ADT', verbose=FALSE, margin=2)
+  if (grepl('CD4',sample)) {
+    hts <- c("Hashtag_1","Hashtag_2","Hashtag_3","Hashtag_4")
+    sobj[["HTO"]] <- CreateAssayObject(counts = dge[['Antibody Capture']][hts,cells,drop=FALSE])
+    sobj <- NormalizeData(sobj, normalization.method='CLR', assay='HTO', verbose=FALSE)
+    sobj <- HTODemux(sobj, assay='HTO', verbose=FALSE)
+  }
+  pbmc[[sample]] <- sobj
+}
+```
+
+get some QC metrics
+
+```{r QC,fig.width=10,fig.height=5}
+md <- do.call(rbind, lapply(names(pbmc), function(x) pbmc[[x]]@meta.data[,c('nCount_RNA','nFeature_RNA','pct.mito')] %>%
+                              dplyr::mutate(orig.ident=x))) %>%
+  dplyr::group_by(orig.ident) %>%
+  dplyr::mutate(orig.ident=paste0(orig.ident,' (n=',n(),')')) %>%
+  gather(metric,value,-orig.ident)
+
+ggplot(md,aes(x=orig.ident,y=value,fill=orig.ident)) + 
+  #geom_boxplot(outlier.shape=NA) + 
+  geom_violin(scale='width') +
+  facet_wrap(~metric,scales='free_y') + 
+  theme_classic() + 
+  theme(axis.text.x=element_text(angle=90,hjust=1,vjust=.5),
+        legend.position='none') + 
+  labs(x='',y='')
+
+```
+
+project our cells onto this reference embedding using RNA data; predict cell type labels for the level 1, level 2 and level 3 clustering of the reference, and also antibody data ("what ADT data would be expect if our samples are like the reference?")
+
+```{r project}
+for (sample in samples) {
+  anchors <- FindTransferAnchors(
+    reference = reference,
+    query = pbmc[[sample]],
+    normalization.method = "SCT",
+    reference.reduction = "spca",
+    dims = 1:50,
+    verbose=FALSE)
+  pbmc[[sample]] <- MapQuery(
+    anchorset = anchors,
+    query = pbmc[[sample]],
+    reference = reference,
+    refdata = list(
+      celltype.l1 = "celltype.l1",
+      celltype.l2 = "celltype.l2",
+      celltype.l3 = "celltype.l3",
+      predicted_ADT = "ADT"
+    ),
+    reference.reduction = "spca", 
+    reduction.model = "wnn.umap",
+    verbose=FALSE)
+}
+```
+
+identify and remove putative doublets (shown in pink), and cells with prediction score < .75
+
+```{r doublets,fig.width=10,fig.height=12}
+source(file.path(path,'my_doubletFinder.R'))
+pbmc <- lapply(pbmc, function(sobj) {
+  DefaultAssay(sobj) <- 'RNA'
+  Idents(sobj) <- 'predicted.celltype.l1'
+  homotypic.prop <- modelHomotypic(Idents(sobj))
+  nExp_poi <- round(0.05*nrow(sobj@meta.data)) 
+  nExp_poi.adj <- round(nExp_poi*(1-homotypic.prop))
+  tmp <- my_doubletFinder(sobj, PCs = 1:10, pN = 0.25, pK = 0.09, nExp = nExp_poi, reuse.pANN = FALSE)
+  tmp <- my_doubletFinder(tmp, PCs = 1:10, pN = 0.25, pK = 0.09, nExp = nExp_poi.adj, reuse.pANN = "pANN")
+  AddMetaData(sobj, tmp@meta.data[,'DF.classifications',drop=FALSE])
+})
+
+do.call(rbind,lapply(pbmc, function(sobj) table(sobj$DF.classifications))) %>%
+  DT::datatable()
+
+plots <- lapply(names(pbmc), function(sample)
+  DimPlot(pbmc[[sample]], group.by='DF.classifications',
+          cols=c('Singlet'='gray',
+                 'Doublet'='deeppink')) +
+    theme_void() + 
+    labs(title=sample) + 
+    theme(legend.position='none'))
+
+plot_grid(plotlist=plots,ncol=5,align='vh')
+
+pbmc.sub <- lapply(pbmc, function(x) subset(x, subset=(DF.classifications=='Singlet') & (predicted.celltype.l1.score >= .75)))
+```
+
+```{r save_samples}
+for (sample in samples) {
+  saveRDS(pbmc.sub[[sample]], file.path(path,'seurat',paste0(sample,'.rds')))
+}
+```
+
+aggregate and demultiplex hashtags
+
+```{r aggregate}
+pbmc <- list()
+for (lib in grep('PBMC',samples,value=TRUE)) {
+  pbmc[[lib]] <- readRDS(file.path(path,'seurat',paste0(lib,'.rds')))
+  pbmc[[lib]]$sample <- lib
+}
+
+study <- read.csv(file.path(path,'sample_sheet','s_hegazy_IBD.txt'),
+                 sep='\t') %>%
+  dplyr::mutate(Sample.Name=gsub('p','P',Sample.Name))
+
+assay <- read.csv(file.path(path,'sample_sheet','a_hegazy_IBD_totalseq_nucleotide_sequencing.txt'),
+                 sep='\t') %>%
+  dplyr::mutate(Sample.Name=gsub('p','P',Sample.Name),
+                Library.Name=gsub('p','P',Library.Name))
+
+for (lib in grep('CD4',samples,value=TRUE)) {
+  sobj <- readRDS(file.path(path,'seurat',paste0(lib,'.rds')))
+  vireo <- read.table(file.path(path,'vireo',paste0(lib,'_donor_ids.tsv')),
+                      header=1,row.names=1,as.is=TRUE)
+  colnames(vireo) <- paste0('vireo_',colnames(vireo))
+  sobj <- AddMetaData(sobj, vireo)  
+  sobj$vireo_donor_id[is.na(sobj$vireo_donor_id)] <- 'none'
+  samples <- assay %>% 
+    dplyr::filter(Library.Name==lib) %>% 
+    dplyr::select(Parameter.Value.Multiplex.sample.tag.,Sample.Name) %>%
+    dplyr::mutate(ht=Parameter.Value.Multiplex.sample.tag.) %>%
+    dplyr::mutate(ht=ifelse(ht=='','Negative',gsub('_','-',ht))) 
+  samples <- setNames(as.character(samples$Sample.Name), samples$ht)
+  sobj$sample <- revalue(sobj$hash.ID, samples)
+  print(table(sobj$sample,sobj$vireo_donor_id))
+  sobjs <- SplitObject(sobj,split.by='sample')
+  for (sample in samples) {
+    pbmc[[sample]] <- sobjs[[sample]]
+  }
+}
+```
+
+add clonotype information
+
+add clonotype information (TCR and BCR where available; now with `filterMulti=TRUE`)
+
+```{r get_clonotypes}
+cols <- c('sample','orig.ident')
+samples <- assay %>% 
+  dplyr::filter(Library.Name %in% libraries) %>%
+  dplyr::select(Library.Name,Sample.Name) 
+
+bcs <- lapply(pbmc, function(x) gsub('.*\\.','',Cells(x)))
+
+tcr_list <- list()
+bcr_list <- list()
+for (lib in libraries) {
+  infile <- file.path(path,'cellranger',paste0(lib,'vdj_t_filtered_contig_annotations.csv'))
+  if (file.exists(infile)) {
+    tcr <- read.csv(infile,
+                    stringsAsFactors=FALSE) %>%
+      dplyr::mutate(is_cell=is_cell=='true',
+                    high_confidence=high_confidence=='true',
+                    full_length=full_length=='true',
+                    productive=productive=='true')
+    for (sample in samples %>% dplyr::filter(Library.Name==lib) %>% dplyr::pull(Sample.Name)) {
+      tcr_list[[sample]] <- tcr %>% dplyr::filter(barcode %in% bcs[[sample]])
+    }
+  }
+  infile <- file.path(path,'cellranger',paste0(lib,'vdj_b_filtered_contig_annotations.csv'))
+  if (file.exists(infile)) {
+    bcr <- read.csv(infile,
+                    stringsAsFactors=FALSE) %>%
+      dplyr::mutate(is_cell=is_cell=='true',
+                    high_confidence=high_confidence=='true',
+                    full_length=full_length=='true',
+                    productive=productive=='true')
+    for (sample in samples %>% dplyr::filter(Library.Name==lib) %>% dplyr::pull(Sample.Name)) {
+      bcr_list[[sample]] <- bcr %>% dplyr::filter(barcode %in% bcs[[sample]])
+    }
+  }
+}
+
+tcr_combined <- sapply(which(sapply(tcr_list, function(x) !is.null(x))),
+                       function(i) combineTCR(tcr_list[[i]],
+                                              samples=c(names(tcr_list)[[i]]),
+                                              ID=c(names(tcr_list)[[i]]),
+                                              cells='T-AB',
+                                              filterMulti=TRUE))
+names(tcr_combined) <- names(tcr_list)[sapply(tcr_list, function(x) !is.null(x))]
+
+bcr_combined <- sapply(which(sapply(bcr_list, function(x) !is.null(x))),
+                       function(i) combineBCR(bcr_list[[i]],
+                                              samples=c(names(bcr_list)[[i]]),
+                                              ID=c(names(bcr_list)[[i]])))
+names(bcr_combined) <- names(bcr_list)[sapply(bcr_list, function(x) !is.null(x))]
+```
+
+```{r save_all}
+saveRDS(pbmc,file.path(path,'seurat','PBMC_combined.rds'))
+saveRDS(tcr_combined,file.path(path,'seurat','TCR_combined.rds'))
+saveRDS(bcr_combined,file.path(path,'seurat','BCR_combined.rds'))
+```
+
+```{r sessionInfo}
+sessionInfo()
+```
+

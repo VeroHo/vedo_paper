@@ -1,0 +1,54 @@
+Source Name	Characteristics[External links]	Characteristics[Organism]	Term Source REF	Term Accession Number	Characteristics[Patient ID]	Characteristics[Previous therapy]	Characteristics[Diagnosis]	Characteristics[Responder]	Protocol REF	Parameter Value[Method]	Performer	Date	Sample Name	Characteristics[Origin]	Characteristics[Material]	Characteristics[time point]	Characteristics[Type age days]	Characteristics[Treat agent]	Characteristics[Treat hours]	Characteristics[Treat target]	Characteristics[Snap frozen]	Characteristics[FFPE]
+HC01		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	K796442		HC		Sample collection	surgery	YHH		healthy1_unstim	blood	CD4 T cells	NA		none	0		TRUE	
+HC01		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	K796442		HC		Sample collection	surgery	YHH		healthy1_stim	blood	CD4 T cells	NA		PMA/Iono	0.5		TRUE	
+HC01		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	K796442		HC		Sample collection	surgery	YHH		HC01_PBMC	blood	PBMC			none	0		TRUE	
+HC01		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	K796442		HC		Sample collection	surgery	YHH		HC01_CD4_unstim	blood	CD4 T cells			none	0		TRUE	
+HC01		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	K796442		HC		Sample collection	surgery	YHH		HC01_CD4_stim	blood	CD4 T cells			PMA/Iono	3		TRUE	
+donor2		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	NA	Vedolizumab	IBD		Sample collection	surgery	YHH		IBD1_before_stim	blood	CD4 T cells	before treatment		PMA/Iono	0.5		TRUE	
+donor2		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	NA	Vedolizumab	IBD		Sample collection	surgery	YHH		IBD1_after_stim	blood	CD4 T cells	6w after treatment		PMA/Iono	0.5		TRUE	
+UC00		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	P33/1		IBD		Sample collection	surgery	YHH		UC00_PBMC	blood	PBMC			none			TRUE	
+p27_1		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	P27/1	Vedo d0	UC	yes	Sample collection	2021 01 19_scRNAseq			p27_1_PBMC	blood	PBMC	Vedo d0		none			TRUE	
+p27_1		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	P27/1	Vedo d0	UC	yes	Sample collection	2021 01 19_scRNAseq			p27_1_CD4	blood	CD4 T cells	Vedo d0		none			TRUE	
+p27_2		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	P27/2	Vedo 6wk	UC	yes	Sample collection	2021 01 19_scRNAseq			p27_2_PBMC	blood	PBMC	Vedo 6wk		Vedolizumab	Week 6		TRUE	
+p27_2		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	P27/2	Vedo 6wk	UC	yes	Sample collection	2021 01 19_scRNAseq			p27_2_CD4	blood	CD4 T cells	Vedo 6wk		Vedolizumab	Week 6		TRUE	
+p28_1		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	28/1	Vedo d0	UC	no	Sample collection	2021 01 19_scRNAseq			p28_1_PBMC	blood	PBMC	Vedo d0		none			TRUE	
+p28_1		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	28/1	Vedo d0	UC	no	Sample collection	2021 01 19_scRNAseq			p28_1_CD4	blood	CD4 T cells	Vedo d0		none			TRUE	
+p28_2		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	28/2	Vedo 6wk	UC	no	Sample collection	2021 01 19_scRNAseq			p28_2_PBMC	blood	PBMC	Vedo 6wk		Vedolizumab	Week 6		TRUE	
+p28_2		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	28/2	Vedo 6wk	UC	no	Sample collection	2021 01 19_scRNAseq			p28_2_CD4	blood	CD4 T cells	Vedo 6wk		Vedolizumab	Week 6		TRUE	
+K693104		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	K693104	none, HC	control	control	Sample collection	2021 01 19_scRNAseq			K693104_PBMC	blood	PBMC	none, HC		none			TRUE	
+K693104		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	K693104	none, HC	control	control	Sample collection	2021 01 19_scRNAseq			K693104_CD4	blood	CD4 T cells	none, HC		none			TRUE	
+P8_1		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	P8_1		UC	yes	Sample collection	2021 04 19_scRNAseq			P8_1_PBMC	blood	PBMC							
+P8_1		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	P8_1		UC	yes	Sample collection	2021 04 19_scRNAseq			P8_1_CD4	blood	CD4 T cells							
+P8_2		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	P8_2		UC	yes	Sample collection	2021 04 19_scRNAseq			P8_2_PBMC	blood	PBMC							
+P8_2		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	P8_2		UC	yes	Sample collection	2021 04 19_scRNAseq			P8_2_CD4	blood	CD4 T cells							
+P3_1		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	P3_1		UC	no	Sample collection	2021 04 19_scRNAseq			P3_1_PBMC	blood	PBMC							
+P3_1		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	P3_1		UC	no	Sample collection	2021 04 19_scRNAseq			P3_1_CD4	blood	CD4 T cells							
+P3_2		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	P3_2		UC	no	Sample collection	2021 04 19_scRNAseq			P3_2_PBMC	blood	PBMC							
+P3_2		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	P3_2		UC	no	Sample collection	2021 04 19_scRNAseq			P3_2_CD4	blood	CD4 T cells							
+K456985		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	K456985		control	control	Sample collection	2021 04 19_scRNAseq			K456985_PBMC	blood	PBMC							
+K456985		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	K456985		control	control	Sample collection	2021 04 19_scRNAseq			K456985_CD4	blood	CD4 T cells							
+P1_1		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	P1_1		UC	yes	Sample collection	2021 04 21_scRNAseq			P1_1_PBMC	blood	PBMC							
+P1_2		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	P1_2		UC	yes	Sample collection	2021 04 21_scRNAseq			P1_2_PBMC	blood	PBMC							
+P25_1		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	P25_1		UC	no	Sample collection	2021 04 21_scRNAseq			P25_1_PBMC	blood	PBMC							
+P25_2		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	P25_2		UC	no	Sample collection	2021 04 21_scRNAseq			P25_2_PBMC	blood	PBMC							
+K955601		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	K955601		control	control	Sample collection	2021 04 21_scRNAseq			K955601_PBMC	blood	PBMC							
+P22_1		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	P22_1		UC	yes	Sample collection	2021 04 23_scRNAseq			P22_1_PBMC	blood	PBMC							
+P22_1		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	P22_1		UC	yes	Sample collection	2021 04 23_scRNAseq			P22_1_CD4	blood	CD4 T cells							
+P22_2		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	P22_2		UC	yes	Sample collection	2021 04 23_scRNAseq			P22_2_PBMC	blood	PBMC							
+P22_2		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	P22_2		UC	yes	Sample collection	2021 04 23_scRNAseq			P22_2_CD4	blood	CD4 T cells							
+P23_1		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	P23_1		UC	no	Sample collection	2021 04 23_scRNAseq			P23_1_PBMC	blood	PBMC							
+P23_1		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	P23_1		UC	no	Sample collection	2021 04 23_scRNAseq			P23_1_CD4	blood	CD4 T cells							
+P23_2		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	P23_2		UC	no	Sample collection	2021 04 23_scRNAseq			P23_2_PBMC	blood	PBMC							
+P23_2		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	P23_2		UC	no	Sample collection	2021 04 23_scRNAseq			P23_2_CD4	blood	CD4 T cells							
+K783496		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	K783496		control	control	Sample collection	2021 04 23_scRNAseq			K783496_PBMC	blood	PBMC							
+K783496		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	K783496		control	control	Sample collection	2021 04 23_scRNAseq			K783496_CD4	blood	CD4 T cells							
+P12_1		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	P12_1		UC	yes	Sample collection	2021 07 30_scRNAseq			P12_1_PBMC	blood	PBMC							
+P12_1		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	P12_1		UC	yes	Sample collection	2021 07 30_scRNAseq			P12_1_CD4	blood	CD4 T cells							
+P12_2		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	P12_2		UC	yes	Sample collection	2021 07 30_scRNAseq			P12_2_PBMC	blood	PBMC							
+P12_2		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	P12_2		UC	yes	Sample collection	2021 07 30_scRNAseq			P12_2_CD4	blood	CD4 T cells							
+P26_1		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	P26_1		UC	no	Sample collection	2021 07 30_scRNAseq			P26_1_PBMC	blood	PBMC							
+P26_1		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	P26_1		UC	no	Sample collection	2021 07 30_scRNAseq			P26_1_CD4	blood	CD4 T cells							
+P26_2		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	P26_2		UC	no	Sample collection	2021 07 30_scRNAseq			P26_2_PBMC	blood	PBMC							
+P26_2		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	P26_2		UC	no	Sample collection	2021 07 30_scRNAseq			P26_2_CD4	blood	CD4 T cells							
+K496398		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	K496398		control	control	Sample collection	2021 07 30_scRNAseq			K496398_PBMC	blood	PBMC							
+K496398		Homo sapiens	NCBITAXON	http://purl.bioontology.org/ontology/NCBITAXON/9606	K496398		control	control	Sample collection	2021 07 30_scRNAseq			K496398_CD4	blood	CD4 T cells							
