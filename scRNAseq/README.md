@@ -11,17 +11,17 @@ input data structure should looks like so (after stripping `GSEXXX_` prefixes fr
 ```
 data
 ├── cellranger
-│   ├── K456985_PBMC_filtered_feature_bc_matrix.h5
-│   ├── K456985_PBMC_vdj_t_filtered_contig_annotations.csv
-│   ├── K456985_PBMC_vdj_b_filtered_contig_annotations.csv
-│   ├── P1_1_PBMC_filtered_feature_bc_matrix.h5
-│   ├── P1_1_PBMC_vdj_t_filtered_contig_annotations.csv
-│   ├── P1_1_PBMC_vdj_b_filtered_contig_annotations.csv
+│   ├── HC-1_PBMC_filtered_feature_bc_matrix.h5
+│   ├── HC-1_PBMC_vdj_t_filtered_contig_annotations.csv
+│   ├── HC-1_PBMC_vdj_b_filtered_contig_annotations.csv
+│   ├── IBD-1_1_PBMC_filtered_feature_bc_matrix.h5
+│   ├── IBD-1_1_PBMC_vdj_t_filtered_contig_annotations.csv
+│   ├── IBD-1_1_PBMC_vdj_b_filtered_contig_annotations.csv
 │   ├── ...
 ├── seurat
 │   └── pbmc_multimodal.h5seurat
 └── vireo
-    ├── P12_P26_K496398_CD4_donor_ids.tsv
+    ├── IBD-2_IBD-6_HC-4_CD4_donor_ids.tsv
     ├── ...
 ```
 
