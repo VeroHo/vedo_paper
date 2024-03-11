@@ -184,14 +184,7 @@ for (lib in grep('PBMC',samples,value=TRUE)) {
   pbmc[[lib]]$sample <- lib
 }
 
-study <- read.csv(file.path(path,'sample_sheet','s_hegazy_IBD.txt'),
-                 sep='\t') %>%
-  dplyr::mutate(Sample.Name=gsub('p','P',Sample.Name))
-
-assay <- read.csv(file.path(path,'sample_sheet','a_hegazy_IBD_totalseq_nucleotide_sequencing.txt'),
-                 sep='\t') %>%
-  dplyr::mutate(Sample.Name=gsub('p','P',Sample.Name),
-                Library.Name=gsub('p','P',Library.Name))
+libraries <- read.csv("libraries.txt", sep='\t')
 
 for (lib in grep('CD4',samples,value=TRUE)) {
   sobj <- readRDS(file.path(path,'seurat',paste0(lib,'.rds')))
@@ -200,7 +193,7 @@ for (lib in grep('CD4',samples,value=TRUE)) {
   colnames(vireo) <- paste0('vireo_',colnames(vireo))
   sobj <- AddMetaData(sobj, vireo)  
   sobj$vireo_donor_id[is.na(sobj$vireo_donor_id)] <- 'none'
-  samples <- assay %>% 
+  samples <- libraries %>% 
     dplyr::filter(Library.Name==lib) %>% 
     dplyr::select(Parameter.Value.Multiplex.sample.tag.,Sample.Name) %>%
     dplyr::mutate(ht=Parameter.Value.Multiplex.sample.tag.) %>%
