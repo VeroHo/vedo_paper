@@ -1,0 +1,46 @@
+Characteristics[Patient ID]	Characteristics[Diagnosis]	Characteristics[Responder]	Parameter Value[Method]	Sample Name	Characteristics[Material]
+IBD-7_1	UC	yes	2021 01 19_scRNAseq	IBD-7_1_PBMC	PBMC
+IBD-7_1	UC	yes	2021 01 19_scRNAseq	IBD-7_1_CD4	CD4 T cells
+IBD-7_2	UC	yes	2021 01 19_scRNAseq	IBD-7_2_PBMC	PBMC
+IBD-7_2	UC	yes	2021 01 19_scRNAseq	IBD-7_2_CD4	CD4 T cells
+28_1	UC	no	2021 01 19_scRNAseq	IBD-8_1_PBMC	PBMC
+28_1	UC	no	2021 01 19_scRNAseq	IBD-8_1_CD4	CD4 T cells
+28_2	UC	no	2021 01 19_scRNAseq	IBD-8_2_PBMC	PBMC
+28_2	UC	no	2021 01 19_scRNAseq	IBD-8_2_CD4	CD4 T cells
+HC-2	control	control	2021 01 19_scRNAseq	HC-2_PBMC	PBMC
+HC-2	control	control	2021 01 19_scRNAseq	HC-2_CD4	CD4 T cells
+IBD-10_1	UC	yes	2021 04 19_scRNAseq	IBD-10_1_PBMC	PBMC
+IBD-10_1	UC	yes	2021 04 19_scRNAseq	IBD-10_1_CD4	CD4 T cells
+IBD-10_2	UC	yes	2021 04 19_scRNAseq	IBD-10_2_PBMC	PBMC
+IBD-10_2	UC	yes	2021 04 19_scRNAseq	IBD-10_2_CD4	CD4 T cells
+IBD-9_1	UC	no	2021 04 19_scRNAseq	IBD-9_1_PBMC	PBMC
+IBD-9_1	UC	no	2021 04 19_scRNAseq	IBD-9_1_CD4	CD4 T cells
+IBD-9_2	UC	no	2021 04 19_scRNAseq	IBD-9_2_PBMC	PBMC
+IBD-9_2	UC	no	2021 04 19_scRNAseq	IBD-9_2_CD4	CD4 T cells
+HC-1	control	control	2021 04 19_scRNAseq	HC-1_PBMC	PBMC
+HC-1	control	control	2021 04 19_scRNAseq	HC-1_CD4	CD4 T cells
+IBD-1_1	UC	yes	2021 04 21_scRNAseq	IBD-1_1_PBMC	PBMC
+IBD-1_2	UC	yes	2021 04 21_scRNAseq	IBD-1_2_PBMC	PBMC
+IBD-5_1	UC	no	2021 04 21_scRNAseq	IBD-5_1_PBMC	PBMC
+IBD-5_2	UC	no	2021 04 21_scRNAseq	IBD-5_2_PBMC	PBMC
+HC-3	control	control	2021 04 21_scRNAseq	HC-3_PBMC	PBMC
+IBD-3_1	UC	yes	2021 04 23_scRNAseq	IBD-3_1_PBMC	PBMC
+IBD-3_1	UC	yes	2021 04 23_scRNAseq	IBD-3_1_CD4	CD4 T cells
+IBD-3_2	UC	yes	2021 04 23_scRNAseq	IBD-3_2_PBMC	PBMC
+IBD-3_2	UC	yes	2021 04 23_scRNAseq	IBD-3_2_CD4	CD4 T cells
+IBD-4_1	UC	no	2021 04 23_scRNAseq	IBD-4_1_PBMC	PBMC
+IBD-4_1	UC	no	2021 04 23_scRNAseq	IBD-4_1_CD4	CD4 T cells
+IBD-4_2	UC	no	2021 04 23_scRNAseq	IBD-4_2_PBMC	PBMC
+IBD-4_2	UC	no	2021 04 23_scRNAseq	IBD-4_2_CD4	CD4 T cells
+HC-5	control	control	2021 04 23_scRNAseq	HC-5_PBMC	PBMC
+HC-5	control	control	2021 04 23_scRNAseq	HC-5_CD4	CD4 T cells
+IBD-2_1	UC	yes	2021 07 30_scRNAseq	IBD-2_1_PBMC	PBMC
+IBD-2_1	UC	yes	2021 07 30_scRNAseq	IBD-2_1_CD4	CD4 T cells
+IBD-2_2	UC	yes	2021 07 30_scRNAseq	IBD-2_2_PBMC	PBMC
+IBD-2_2	UC	yes	2021 07 30_scRNAseq	IBD-2_2_CD4	CD4 T cells
+IBD-6_1	UC	no	2021 07 30_scRNAseq	IBD-6_1_PBMC	PBMC
+IBD-6_1	UC	no	2021 07 30_scRNAseq	IBD-6_1_CD4	CD4 T cells
+IBD-6_2	UC	no	2021 07 30_scRNAseq	IBD-6_2_PBMC	PBMC
+IBD-6_2	UC	no	2021 07 30_scRNAseq	IBD-6_2_CD4	CD4 T cells
+HC-4	control	control	2021 07 30_scRNAseq	HC-4_PBMC	PBMC
+HC-4	control	control	2021 07 30_scRNAseq	HC-4_CD4	CD4 T cells

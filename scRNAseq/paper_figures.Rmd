@@ -36,35 +36,35 @@ path <- getwd()
 
 load our own PBMC data after projecting on to the reference
 
-- K456985_PBMC
-- K783496_PBMC
-- K693104_PBMC
-- K955601_PBMC
-- P1_1_PBMC
-- P1_2_PBMC
-- P3_1_PBMC
-- P3_2_PBMC
-- P8_1_PBMC
-- P8_2_PBMC
-- P22_1_PBMC
-- P22_2_PBMC
-- P23_1_PBMC
-- P23_2_PBMC
-- P25_1_PBMC
-- P25_2_PBMC
-- P27_1_PBMC
-- P27_2_PBMC
-- P28_1_PBMC
-- P28_2_PBMC
-- P22_P23_K783496_CD4
-- P8_P3_K456985_CD4
-- P27_P28_K693104_CD4
-- P12_1_PBMC
-- P12_2_PBMC
-- P26_1_PBMC
-- P26_2_PBMC
-- K496398_PBMC
-- P12_P26_K496398_CD4
+- HC-1_PBMC
+- HC-5_PBMC
+- HC-2_PBMC
+- HC-3_PBMC
+- IBD-1_1_PBMC
+- IBD-1_2_PBMC
+- IBD-9_1_PBMC
+- IBD-9_2_PBMC
+- IBD-10_1_PBMC
+- IBD-10_2_PBMC
+- IBD-3_1_PBMC
+- IBD-3_2_PBMC
+- IBD-4_1_PBMC
+- IBD-4_2_PBMC
+- IBD-5_1_PBMC
+- IBD-5_2_PBMC
+- IBD-7_1_PBMC
+- IBD-7_2_PBMC
+- IBD-8_1_PBMC
+- IBD-8_2_PBMC
+- IBD-3_IBD-4_HC-5_CD4
+- IBD-10_IBD-9_HC-1_CD4
+- IBD-7_IBD-8_HC-2_CD4
+- IBD-2_1_PBMC
+- IBD-2_2_PBMC
+- IBD-6_1_PBMC
+- IBD-6_2_PBMC
+- HC-4_PBMC
+- IBD-2_IBD-6_HC-4_CD4
              
 ```{r get_data}
 pbmc <- readRDS(file.path(path,'seurat','PBMC_combined.rds'))
@@ -76,13 +76,26 @@ Idents(CD4.integrated) <- as.factor(as.numeric(Idents(CD4.integrated)))
 ```
 
 ```{r get_metadata}
-study <- read.csv(file.path(path,'sample_sheet','s_hegazy_IBD.txt'),
-                 sep='\t') %>%
-  dplyr::mutate(Sample.Name=gsub('p','P',Sample.Name))
-assay <- read.csv(file.path(path,'sample_sheet','a_hegazy_IBD_totalseq_nucleotide_sequencing.txt'),
-                 sep='\t') %>%
+# old IDs
+study <- read.csv(file.path(path,'sample_sheet','s_hegazy_IBD.txt'),sep='\t') %>%
   dplyr::mutate(Sample.Name=gsub('p','P',Sample.Name),
-                Library.Name=gsub('p','P',Library.Name))
+                Patient.ID=gsub('[P]*([0-9]*)[\\/_][12]','P\\1',Characteristics.Patient.ID.),
+                Responder=Characteristics.Responder.,
+                Diagnosis=Characteristics.Diagnosis.,
+                Batch=gsub(' ','',gsub('_scRNAseq','',Parameter.Value.Method.)),
+                Timepoint=ifelse(grepl('_1_',Sample.Name),'Vedo_0d',
+                                 ifelse(grepl('_2_',Sample.Name),'Vedo_6wk','ctrl')),
+                Material=ifelse(Characteristics.Material.=='PBMC','PBMC','CD4')) 
+
+# new IDs
+# study <- read.csv(file.path(path,'sample_sheet.txt'),sep='\t') %>%
+#   dplyr::mutate(Patient.ID=Characteristics.Patient.ID.,
+#                 Responder=Characteristics.Responder.,
+#                 Diagnosis=Characteristics.Diagnosis.,
+#                 Batch=gsub(' ','',gsub('_scRNAseq','',Parameter.Value.Method.)),
+#                 Timepoint=ifelse(grepl('_1_',Sample.Name),'Vedo_0d',
+#                                  ifelse(grepl('_2_',Sample.Name),'Vedo_6wk','ctrl')),
+#                 Material=ifelse(Characteristics.Material.=='PBMC','PBMC','CD4')) 
 
 timepoint_colors <- c('ctrl'='gray','Vedo_0d'='#ff7700','Vedo_6wk'='#882e72')
 condition_colors <- c('HC'='black','UC'='#1965b0')
@@ -159,14 +172,7 @@ pbmc_meta <- do.call(rbind,
                                                              'predicted.celltype.l3')) %>%
                               tibble::rownames_to_column('cell') %>%
                               dplyr::mutate(cell=paste0(orig.ident,'_',cell)))) %>%
-  dplyr::left_join(study %>% 
-                     dplyr::mutate(Patient.ID=gsub('[P]*([0-9]*)[\\/_][12]','P\\1',Characteristics.Patient.ID.),
-                                   Responder=Characteristics.Responder.,
-                                   Diagnosis=Characteristics.Diagnosis.,
-                                   Batch=gsub(' ','',gsub('_scRNAseq','',Parameter.Value.Method.)),
-                                   Timepoint=ifelse(grepl('_1_',Sample.Name),'Vedo_0d',
-                                                    ifelse(grepl('_2_',Sample.Name),'Vedo_6wk','ctrl')),
-                                   Material=ifelse(Characteristics.Material.=='PBMC','PBMC','CD4')) %>%
+  dplyr::left_join(study %>%
                      dplyr::select(Patient.ID,Responder,Diagnosis,Sample.Name,Material,Timepoint,Batch),
                    by=c('sample'='Sample.Name')) %>%
   dplyr::mutate(celltype=plyr::revalue(predicted.celltype.l2,ct_map))
@@ -232,13 +238,6 @@ all_frac <- do.call(rbind,lapply(pbmc, function(x) x[[cols]])) %>%
   dplyr::summarise(n=n()) %>%
   dplyr::mutate(frac=n/sum(n)) %>%
   dplyr::left_join(study %>% 
-                     dplyr::mutate(Patient.ID=gsub('[P]*([0-9]*)[\\/_][12]','P\\1',Characteristics.Patient.ID.),
-                                   Responder=Characteristics.Responder.,
-                                   Diagnosis=Characteristics.Diagnosis.,
-                                   Batch=gsub(' ','',gsub('_scRNAseq','',Parameter.Value.Method.)),
-                                   Timepoint=ifelse(grepl('_1_',Sample.Name),'Vedo_0d',
-                                                    ifelse(grepl('_2_',Sample.Name),'Vedo_6wk','ctrl')),
-                                   Material=ifelse(Characteristics.Material.=='PBMC','PBMC','CD4')) %>%
                      dplyr::select(Patient.ID,Responder,Diagnosis,Sample.Name,Material,Timepoint,Batch),
                    by=c('sample'='Sample.Name'))
 
@@ -431,13 +430,6 @@ pbmc_T_meta <- do.call(rbind,
                                 tibble::rownames_to_column('cell'))) %>%
                                 #dplyr::mutate(cell=paste0(orig.ident,'_',cell)))) %>%
   dplyr::left_join(study %>% 
-                     dplyr::mutate(Patient.ID=gsub('[P]*([0-9]*)[\\/_][12]','P\\1',Characteristics.Patient.ID.),
-                                   Responder=Characteristics.Responder.,
-                                   Diagnosis=Characteristics.Diagnosis.,
-                                   Batch=gsub(' ','',gsub('_scRNAseq','',Parameter.Value.Method.)),
-                                   Timepoint=ifelse(grepl('_1_',Sample.Name),'Vedo_0d',
-                                                    ifelse(grepl('_2_',Sample.Name),'Vedo_6wk','ctrl')),
-                                   Material=ifelse(Characteristics.Material.=='PBMC','PBMC','CD4')) %>%
                      dplyr::select(Patient.ID,Responder,Diagnosis,Sample.Name,Material,Timepoint,Batch),
                    by=c('sample'='Sample.Name')) %>%
   dplyr::mutate(celltype=plyr::revalue(predicted.celltype.l2,ct_map))
@@ -502,13 +494,6 @@ all_meta <- do.call(rbind,lapply(pbmc[grepl('PBMC',names(pbmc))], function(x) x@
   dplyr::mutate(celltype=plyr::revalue(predicted.celltype.l2,ct_map),
                 cell=paste0(sample,'_',gsub('\\.','_',cell))) %>%
   dplyr::left_join(study %>% 
-                     dplyr::mutate(Patient.ID=gsub('[P]*([0-9]*)[\\/_][12]','P\\1',Characteristics.Patient.ID.),
-                                   Responder=ifelse(Characteristics.Responder.=='yes','R','NR'),
-                                   Diagnosis=Characteristics.Diagnosis.,
-                                   Batch=gsub(' ','',gsub('_scRNAseq','',Parameter.Value.Method.)),
-                                   Timepoint=ifelse(grepl('_1_',Sample.Name),'Vedo_0d',
-                                                    ifelse(grepl('_2_',Sample.Name),'Vedo_6wk','ctrl')),
-                                   Material=ifelse(Characteristics.Material.=='PBMC','PBMC','CD4')) %>%
                      dplyr::select(Patient.ID,Responder,Diagnosis,Sample.Name,Material,Timepoint,Batch),
                    by=c('sample'='Sample.Name'))
 
@@ -523,12 +508,6 @@ for (ct in grep('CD[48]|Treg',unique(all_meta$celltype),value=TRUE)) {
 }
 df <- do.call(rbind,dfs) %>%
   dplyr::left_join(study %>% 
-                     dplyr::mutate(Patient.ID=gsub('[P]*([0-9]*)[\\/_][12]','P\\1',Characteristics.Patient.ID.),
-                                   Responder=ifelse(Characteristics.Responder.=='yes','R','NR'),
-                                   Diagnosis=Characteristics.Diagnosis.,
-                                   Batch=gsub(' ','',gsub('_scRNAseq','',Parameter.Value.Method.)),
-                                   Timepoint =ifelse(grepl('_1_',Sample.Name),'Vedo_0d',
-                                                    ifelse(grepl('_2_',Sample.Name),'Vedo_6wk','ctrl'))) %>%
                      dplyr::select(Patient.ID,Responder,Diagnosis,Sample.Name,Timepoint,Batch),
                    by=c('sample'='Sample.Name')) %>%
   dplyr::arrange(Patient.ID)
@@ -620,13 +599,6 @@ pbmc_md <- do.call(rbind,lapply(pbmc[grepl('PBMC',names(pbmc))], function(x) Fet
   dplyr::mutate(celltype=plyr::revalue(predicted.celltype.l2,ct_map),
                 cell=paste0(sample,'_',gsub('\\.','_',cell))) %>%
   dplyr::left_join(study %>% 
-                     dplyr::mutate(Patient.ID=gsub('[P]*([0-9]*)[\\/_][12]','P\\1',Characteristics.Patient.ID.),
-                                   Responder=Characteristics.Responder.,
-                                   Diagnosis=Characteristics.Diagnosis.,
-                                   Batch=gsub(' ','',gsub('_scRNAseq','',Parameter.Value.Method.)),
-                                   Timepoint=ifelse(grepl('_1_',Sample.Name),'Vedo_0d',
-                                                    ifelse(grepl('_2_',Sample.Name),'Vedo_6wk','ctrl')),
-                                   Material=ifelse(Characteristics.Material.=='PBMC','PBMC','CD4')) %>%
                      dplyr::select(Patient.ID,Responder,Diagnosis,Sample.Name,Material,Timepoint,Batch),
                    by=c('sample'='Sample.Name'))
 
@@ -659,12 +631,6 @@ for (ct in c('Mmry CD4','Mmry CD8')) {
 }
 df <- do.call(rbind,dfs) %>%
   dplyr::left_join(study %>% 
-                     dplyr::mutate(Patient.ID=gsub('[P]*([0-9]*)[\\/_][12]','P\\1',Characteristics.Patient.ID.),
-                                   Responder=Characteristics.Responder.,
-                                   Diagnosis=Characteristics.Diagnosis.,
-                                   Batch=gsub(' ','',gsub('_scRNAseq','',Parameter.Value.Method.)),
-                                   Timepoint=ifelse(grepl('_1_',Sample.Name),'Vedo_0d',
-                                                    ifelse(grepl('_2_',Sample.Name),'Vedo_6wk','ctrl'))) %>%
                      dplyr::select(Patient.ID,Responder,Diagnosis,Sample.Name,Timepoint,Batch),
                    by=c('sample'='Sample.Name')) %>%
   dplyr::arrange(Patient.ID)
@@ -786,13 +752,6 @@ pbmc_md <- do.call(rbind,lapply(pbmc[grepl('PBMC',names(pbmc))], function(x) Fet
   dplyr::mutate(celltype=predicted.celltype.l2,
                 cell=paste0(sample,'_',gsub('\\.','_',cell))) %>%
   dplyr::left_join(study %>% 
-                     dplyr::mutate(Patient.ID=gsub('[P]*([0-9]*)[\\/_][12]','P\\1',Characteristics.Patient.ID.),
-                                   Responder=Characteristics.Responder.,
-                                   Diagnosis=Characteristics.Diagnosis.,
-                                   Batch=gsub(' ','',gsub('_scRNAseq','',Parameter.Value.Method.)),
-                                   Timepoint=ifelse(grepl('_1_',Sample.Name),'Vedo_0d',
-                                                    ifelse(grepl('_2_',Sample.Name),'Vedo_6wk','ctrl')),
-                                   Material=ifelse(Characteristics.Material.=='PBMC','PBMC','CD4')) %>%
                      dplyr::select(Patient.ID,Responder,Diagnosis,Sample.Name,Material,Timepoint,Batch),
                    by=c('sample'='Sample.Name'))
 
@@ -821,12 +780,6 @@ df <- do.call(rbind,dfs) %>%
   #dplyr::mutate(sample=ifelse(grepl('_CD4$',sample),sample,paste0(sample,'_PBMC'))) %>%
   dplyr::mutate(sample=paste0(sample,'_PBMC')) %>%
   dplyr::left_join(study %>% 
-                     dplyr::mutate(Patient.ID=gsub('[P]*([0-9]*)[\\/_][12]','P\\1',Characteristics.Patient.ID.),
-                                   Responder=ifelse(Characteristics.Responder.=='yes','R','NR'),
-                                   Diagnosis=Characteristics.Diagnosis.,
-                                   Batch=gsub(' ','',gsub('_scRNAseq','',Parameter.Value.Method.)),
-                                   Timepoint=ifelse(grepl('_1_',Sample.Name),'Vedo_0d',
-                                                    ifelse(grepl('_2_',Sample.Name),'Vedo_6wk','ctrl'))) %>%
                      dplyr::select(Patient.ID,Responder,Diagnosis,Sample.Name,Timepoint,Batch),
                    by=c('sample'='Sample.Name')) %>%
   dplyr::arrange(Patient.ID)
@@ -879,12 +832,6 @@ for (ct in c('CD4 TCM','CD4 TEM',
 }
 df <- do.call(rbind,dfs) %>%
   dplyr::left_join(study %>% 
-                     dplyr::mutate(Patient.ID=gsub('[P]*([0-9]*)[\\/_][12]','P\\1',Characteristics.Patient.ID.),
-                                   Responder=Characteristics.Responder.,
-                                   Diagnosis=Characteristics.Diagnosis.,
-                                   Batch=gsub(' ','',gsub('_scRNAseq','',Parameter.Value.Method.)),
-                                   Timepoint=ifelse(grepl('_1_',Sample.Name),'Vedo_0d',
-                                                    ifelse(grepl('_2_',Sample.Name),'Vedo_6wk','ctrl'))) %>%
                      dplyr::select(Patient.ID,Responder,Diagnosis,Sample.Name,Timepoint,Batch),
                    by=c('sample'='Sample.Name')) %>%
   dplyr::arrange(Patient.ID)
@@ -941,13 +888,6 @@ pbmc_B_meta <- do.call(rbind,
                                 tibble::rownames_to_column('cell'))) %>%
   #dplyr::mutate(cell=paste0(orig.ident,'_',cell)))) %>%
   dplyr::left_join(study %>% 
-                     dplyr::mutate(Patient.ID=gsub('[P]*([0-9]*)[\\/_][12]','P\\1',Characteristics.Patient.ID.),
-                                   Responder=Characteristics.Responder.,
-                                   Diagnosis=Characteristics.Diagnosis.,
-                                   Batch=gsub(' ','',gsub('_scRNAseq','',Parameter.Value.Method.)),
-                                   Timepoint=ifelse(grepl('_1_',Sample.Name),'Vedo_0d',
-                                                    ifelse(grepl('_2_',Sample.Name),'Vedo_6wk','ctrl')),
-                                   Material=ifelse(Characteristics.Material.=='PBMC','PBMC','CD4')) %>%
                      dplyr::select(Patient.ID,Responder,Diagnosis,Sample.Name,Material,Timepoint,Batch),
                    by=c('sample'='Sample.Name')) %>%
   dplyr::mutate(celltype=plyr::revalue(predicted.celltype.l2,ct_map))
@@ -986,12 +926,6 @@ for (ct in grep('B|Plasmablast',unique(all_meta$celltype),value=TRUE)) {
 }
 df <- do.call(rbind,dfs) %>%
   dplyr::left_join(study %>% 
-                     dplyr::mutate(Patient.ID=gsub('[P]*([0-9]*)[\\/_][12]','P\\1',Characteristics.Patient.ID.),
-                                   Responder=Characteristics.Responder.,
-                                   Diagnosis=Characteristics.Diagnosis.,
-                                   Batch=gsub(' ','',gsub('_scRNAseq','',Parameter.Value.Method.)),
-                                   Timepoint=ifelse(grepl('_1_',Sample.Name),'Vedo_0d',
-                                                    ifelse(grepl('_2_',Sample.Name),'Vedo_6wk','ctrl'))) %>%
                      dplyr::select(Patient.ID,Responder,Diagnosis,Sample.Name,Timepoint,Batch),
                    by=c('sample'='Sample.Name')) %>%
   dplyr::arrange(Patient.ID)
@@ -1531,12 +1465,6 @@ for (cl in unique(CD4.integrated$cluster)) {
 }
 df <- do.call(rbind,dfs) %>%
   dplyr::left_join(study %>% 
-                     dplyr::mutate(Patient.ID=gsub('[P]*([0-9]*)[\\/_][12]','P\\1',Characteristics.Patient.ID.),
-                                   Responder=Characteristics.Responder.,
-                                   Diagnosis=Characteristics.Diagnosis.,
-                                   Batch=gsub(' ','',gsub('_scRNAseq','',Parameter.Value.Method.)),
-                                   Timepoint=ifelse(grepl('_1_',Sample.Name),'Vedo_0d',
-                                                    ifelse(grepl('_2_',Sample.Name),'Vedo_6wk','ctrl'))) %>%
                      dplyr::select(Patient.ID,Responder,Diagnosis,Sample.Name,Timepoint,Batch),
                    by=c('sample'='Sample.Name')) %>%
   dplyr::arrange(Patient.ID)
