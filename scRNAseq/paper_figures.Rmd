@@ -309,7 +309,7 @@ ggplot(RNA, aes(x=refUMAP_1,y=refUMAP_2,color=expression)) +
 ```
 
 ```{r Fig_S3D,fig.width=7,fig.height=3}
-RNA %>% 
+pl <- RNA %>% 
   spread(gene,expression) %>% 
   dplyr::group_by(orig.ident,Patient.ID, celltype,Timepoint,Diagnosis) %>% 
   dplyr::summarise(pos=mean((ITGA4 > 0) & (ITGB7 > 0))) %>%
@@ -331,6 +331,13 @@ RNA %>%
         strip.placement='outside',
         strip.text=element_text(size=8,angle=45,hjust=1,vjust=1))  +
   labs(x='',y='fraction ITGA4/ITGB7\ndouble-positive cells',fill='',color='')
+
+pg <- ggplotGrob(pl)
+for(i in which(grepl("strip-b", pg$layout$name))){
+  pg$grobs[[i]]$layout$clip <- "off"
+}
+
+grid::grid.draw(pg)
 ```
 
 differential expression of ITGA4 and ITGB7
@@ -559,44 +566,46 @@ grid::grid.draw(pg)
 #pl
 ```
 
-<!-- ```{r Fig_S11F,fig.width=6,fig.height=3} -->
-<!-- pl <- ggplot(df %>%  -->
-<!--                dplyr::filter(Timepoint!='ctrl',celltype!='Tregs') %>% -->
-<!--                gather(metric,value,-c(sample,Patient.ID,Responder,Diagnosis,Timepoint,Batch,celltype)) %>% -->
-<!--                dplyr::filter(metric=='Inv.Simpson') %>% -->
-<!--                dplyr::arrange(Responder,celltype,Timepoint,Patient.ID), -->
-<!--              aes(x=Responder,y=value)) + -->
-<!--   geom_boxplot(aes(fill=Responder,color=Responder),outlier.shape=NA) + -->
-<!--   geom_point(size=1,color='gray30') + -->
-<!--   theme_classic() + -->
-<!--   coord_cartesian(clip='off') + -->
-<!--   scale_y_log10() + -->
-<!--   facet_grid(Timepoint ~ celltype,scales='free_y',switch='y') + -->
-<!--   stat_compare_means(comparisons=list(c('NR','R')),label = "p.format",size=2,bracket.size=.25,tip.length=.01) + -->
-<!--   scale_fill_manual(values=responder_colors,limits=force) + -->
-<!--   scale_color_manual(values=responder_colors,limits=force) + -->
-<!--   labs(x='',y='Inv. Simpson',title='') + -->
-<!--   theme(legend.key.size=unit(4,'mm'), -->
-<!--         legend.box='horizontal', -->
-<!--         axis.text.x=element_blank(), -->
-<!--         strip.background=element_blank(), -->
-<!--         strip.text=element_text(size=8), -->
-<!--         strip.placement='outside') -->
+```{r Fig_S11F,fig.width=6,fig.height=3}
+pl <- ggplot(df %>%
+               dplyr::filter(Timepoint!='ctrl',celltype!='Tregs') %>%
+               gather(metric,value,-c(sample,Patient.ID,Responder,Diagnosis,Timepoint,Batch,celltype)) %>%
+               dplyr::filter(metric=='Inv.Simpson') %>%
+               dplyr::arrange(Responder,celltype,Timepoint,Patient.ID),
+             aes(x=Responder,y=value)) +
+  geom_boxplot(aes(fill=Responder,color=Responder),outlier.shape=NA) +
+  geom_point(size=1,color='gray30') +
+  theme_classic() +
+  coord_cartesian(clip='off') +
+  scale_y_log10() +
+  facet_grid(Timepoint ~ celltype,scales='free_y',switch='y') +
+  stat_compare_means(comparisons=list(c('NR','R')),label = "p.format",size=2,bracket.size=.25,tip.length=.01) +
+  scale_fill_manual(values=responder_colors,limits=force) +
+  scale_color_manual(values=responder_colors,limits=force) +
+  labs(x='',y='Inv. Simpson',title='') +
+  theme(legend.key.size=unit(4,'mm'),
+        legend.box='horizontal',
+        axis.text.x=element_blank(),
+        strip.background=element_blank(),
+        strip.text=element_text(size=8),
+        strip.placement='outside')
 
-<!-- pg <- ggplotGrob(pl) -->
-<!-- for(i in which(grepl("strip-t", pg$layout$name))){ -->
-<!--   pg$grobs[[i]]$layout$clip <- "off" -->
-<!-- } -->
+pg <- ggplotGrob(pl)
+for(i in which(grepl("strip-t", pg$layout$name))){
+  pg$grobs[[i]]$layout$clip <- "off"
+}
 
-<!-- grid::grid.draw(pg) -->
-<!-- #pl -->
-<!-- ``` -->
+grid::grid.draw(pg)
+#pl
+```
 
 check TCR diversity for CD4 / CD8 subsets that are 
 
-- ITGA4 or ITGB7 positive
+- ITGA4, ITGB7 or ITGB1 positive
 - Integrin-b7 positive (after determining a threshold)
 - GPR15,  CCR9 or ITGAE positive 
+- ITGA4, ITGB7 or ITGB1 negative
+- Integrin-b7 negative 
 
 
 ```{r Fig_S4E_S4H_S5C_S5D,fig.width=2.5,fig.height=2.5, cache=FALSE}
@@ -605,7 +614,7 @@ for (nn in grep('PBMC',names(pbmc),value=TRUE)) {
   DefaultAssay(pbmc[[nn]]) <- 'RNA'
 }
 
-cols <- c('sample','orig.ident','predicted.celltype.l2','ITGA4','ITGB7','Integrin-b7','GPR15','CCR9','ITGAE','MKI67')
+cols <- c('sample','orig.ident','predicted.celltype.l2','ITGA4','ITGB7','ITGB1','Integrin-b7','GPR15','CCR9','ITGAE','MKI67')
 pbmc_md <- do.call(rbind,lapply(pbmc[grepl('PBMC',names(pbmc))], function(x) FetchData(x,cols))) %>%
   tibble::rownames_to_column('cell') %>%
   dplyr::mutate(celltype=plyr::revalue(predicted.celltype.l2,ct_map),
@@ -632,7 +641,12 @@ for (ct in c('Mmry CD4','Mmry CD8')) {
               GPR15=pbmc_md$cell[grepl(ct,pbmc_md$celltype) & (pbmc_md$GPR15 > 0)],
               CCR9=pbmc_md$cell[grepl(ct,pbmc_md$celltype) & (pbmc_md$CCR9 > 0)],
               ITGAE=pbmc_md$cell[grepl(ct,pbmc_md$celltype) & (pbmc_md$ITGAE > 0)],
-              MKI67=pbmc_md$cell[grepl(ct,pbmc_md$celltype) & (pbmc_md$MKI67 > 0)])
+              MKI67=pbmc_md$cell[grepl(ct,pbmc_md$celltype) & (pbmc_md$MKI67 > 0)],
+              ITGB1=pbmc_md$cell[grepl(ct,pbmc_md$celltype) & (pbmc_md$ITGB1 > 0)],
+              ITGA4neg=pbmc_md$cell[grepl(ct,pbmc_md$celltype) & (pbmc_md$ITGA4==0)],
+              ITGB7neg=pbmc_md$cell[grepl(ct,pbmc_md$celltype) & (pbmc_md$ITGB7==0)],
+              ITGB1neg=pbmc_md$cell[grepl(ct,pbmc_md$celltype) & (pbmc_md$ITGB1==0)],
+              Integrin_b7_neg=pbmc_md$cell[grepl(ct,pbmc_md$celltype) & (pbmc_md$Integrinb7=='neg')])
   for (nn in names(bcs)) {
     if (length(bcs[[nn]]) > 0) {
       tcrcomb <- lapply(tcr_combined,
@@ -655,7 +669,7 @@ df <- do.call(rbind,dfs) %>%
                    by=c('sample'='Sample.Name')) %>%
   dplyr::arrange(Patient.ID)
 
-for (ss in c('GPR15','Integrin_b7','ITGA4','ITGAE','ITGB7')) {
+for (ss in c('GPR15','Integrin_b7','ITGA4','ITGAE','ITGB7','ITGB1','ITGA4neg','ITGB7neg','ITGB1neg','Integrin_b7_neg')) {
   for (ct in c('Mmry CD4','Mmry CD8')) {
     pl <- ggplot(df %>% 
                    dplyr::filter(Diagnosis=='UC') %>%
@@ -1008,29 +1022,29 @@ ggplot(df %>%
         strip.placement='outside')
 ```
 
-<!-- ```{r Fig_S10F,fig.width=4.5,fig.height=3} -->
-<!-- ggplot(df %>%  -->
-<!--          dplyr::filter(Diagnosis=='UC') %>% -->
-<!--          gather(metric,value,-c(sample,Patient.ID,Responder,Diagnosis,Timepoint,Batch,celltype,Material)) %>% -->
-<!--          dplyr::filter(metric=='Inv.Simpson',Responder!='control') %>% -->
-<!--          dplyr::mutate(Responder=ifelse(Responder=='yes','R','NR')),  -->
-<!--        aes(x=Responder,y=value)) + -->
-<!--   geom_boxplot(aes(fill=Responder,color=Responder),outlier.shape=NA) + -->
-<!--   geom_point(size=1,color='gray30') + -->
-<!--   theme_classic() + -->
-<!--   coord_cartesian(clip='off') + -->
-<!--   scale_y_log10() + -->
-<!--   facet_grid(Timepoint~celltype,scales='free_y',switch='y') + -->
-<!--   stat_compare_means(comparisons=list(c('NR','R')),label = "p.format",size=2,bracket.size=.25,tip.length=.01) + -->
-<!--   scale_fill_manual(values=responder_colors) + -->
-<!--   scale_color_manual(values=responder_colors) + -->
-<!--   labs(x='',y='Inv. Simpson',title='') + -->
-<!--   theme(legend.key.size=unit(4,'mm'), -->
-<!--         legend.box='horizontal', -->
-<!--         axis.text.x=element_text(angle=90,hjust=1,vjust=0), -->
-<!--         strip.background=element_blank(), -->
-<!--         strip.placement='outside') -->
-<!-- ``` -->
+```{r Fig_S10F,fig.width=4.5,fig.height=3}
+ggplot(df %>%
+         dplyr::filter(Diagnosis=='UC') %>%
+         gather(metric,value,-c(sample,Patient.ID,Responder,Diagnosis,Timepoint,Batch,celltype,Material)) %>%
+         dplyr::filter(metric=='Inv.Simpson',Responder!='control') %>%
+         dplyr::mutate(Responder=ifelse(Responder=='yes','R','NR')),
+       aes(x=Responder,y=value)) +
+  geom_boxplot(aes(fill=Responder,color=Responder),outlier.shape=NA) +
+  geom_point(size=1,color='gray30') +
+  theme_classic() +
+  coord_cartesian(clip='off') +
+  scale_y_log10() +
+  facet_grid(Timepoint~celltype,scales='free_y',switch='y') +
+  stat_compare_means(comparisons=list(c('NR','R')),label = "p.format",size=2,bracket.size=.25,tip.length=.01) +
+  scale_fill_manual(values=responder_colors) +
+  scale_color_manual(values=responder_colors) +
+  labs(x='',y='Inv. Simpson',title='') +
+  theme(legend.key.size=unit(4,'mm'),
+        legend.box='horizontal',
+        axis.text.x=element_text(angle=90,hjust=1,vjust=0),
+        strip.background=element_blank(),
+        strip.placement='outside')
+```
 
 
 <!-- ```{r clonotype_celltypes_BCR,fig.width=6.5,fig.height=10} -->
@@ -1086,122 +1100,124 @@ pbmc_frac %>%
 
 <!-- # Fig. 4 supplements -->
 
-<!-- ```{r get_GSE73661} -->
-<!-- olink_genes <- c('CXCL8','VEGFA','CD8A','CCL7','GDNF','CDCP1','CD244','IL7','TNFRSF11B','TGFB1','PLAU','IL6','IL17C','CCL2','IL17A','CXCL11', -->
-<!--                  'AXIN1','TNFSF10','CXCL9','CST5','OSM','CXCL1','CCL4','CD6','SCF','IL18','SLAMF1','TGFA','CCL13','CCL11','TNFSF14','IL10RA', -->
-<!--                  'FGF5','MMP1','LIFR','FGF21','CCL19','IL15RA','IL10RB','IL18R1','CD274','CXCL5','TNFSF11','HGF','IL12B','MMP10','IL10','TNF', -->
-<!--                  'CCL23','CD5','CCL3','FLT3LG','CXCL6','CXCL10','EIF4EBP1','SIRT2','CCL28','DNER','S100A12','CD40','IFNG','FGF19','CCL8','CASP8', -->
-<!--                  'CCL25','CX3CL1','TNFRSF9','NTF3','TNFSF12','CCL20','SULT1A1','STAMBP','ADA','LTA','CSF1') -->
+```{r get_GSE73661}
+library(limma)
+library(SummarizedExperiment)
+olink_genes <- c('CXCL8','VEGFA','CD8A','CCL7','GDNF','CDCP1','CD244','IL7','TNFRSF11B','TGFB1','PLAU','IL6','IL17C','CCL2','IL17A','CXCL11',
+                 'AXIN1','TNFSF10','CXCL9','CST5','OSM','CXCL1','CCL4','CD6','SCF','IL18','SLAMF1','TGFA','CCL13','CCL11','TNFSF14','IL10RA',
+                 'FGF5','MMP1','LIFR','FGF21','CCL19','IL15RA','IL10RB','IL18R1','CD274','CXCL5','TNFSF11','HGF','IL12B','MMP10','IL10','TNF',
+                 'CCL23','CD5','CCL3','FLT3LG','CXCL6','CXCL10','EIF4EBP1','SIRT2','CCL28','DNER','S100A12','CD40','IFNG','FGF19','CCL8','CASP8',
+                 'CCL25','CX3CL1','TNFRSF9','NTF3','TNFSF12','CCL20','SULT1A1','STAMBP','ADA','LTA','CSF1')
 
-<!-- meta <- read.table(file.path(path,'GSE73661','GSE73661_Vedo.txt'),header=1,sep='\t') %>% -->
-<!--   dplyr::mutate(sample=make.names(geo_accession)) %>% -->
-<!--   tibble::rownames_to_column("accession")  %>% -->
-<!--   dplyr::mutate(diagnosis=factor(ifelse(grepl('UC',sample),'UC','control'),levels=c('control','UC')), -->
-<!--                 treatment=factor(ifelse(diagnosis=='control','control', -->
-<!--                                         ifelse(grepl('plac',sample),'placebo', -->
-<!--                                                ifelse(grepl('IFX',sample),'IFX', -->
-<!--                                                       ifelse(grepl('vdz4w',sample),'vdz4w','vdz8w')))), -->
-<!--                                  levels=c('control','placebo','IFX','vdz4w','vdz8w')), -->
-<!--                 timepoint=factor(ifelse(diagnosis=='control','control', -->
-<!--                                         ifelse(grepl('W0',sample),'w0', -->
-<!--                                                ifelse(grepl('W4|W6',sample),'w6', -->
-<!--                                                       ifelse(grepl('W12',sample),'w12', -->
-<!--                                                              ifelse(grepl('W52',sample),'w52','other'))))), -->
-<!--                                  levels=c('control','other','w0','w6','w12','w52')), -->
-<!--                 responder=ifelse(diagnosis=='control','control',ifelse(Response %in% c(0,'Placebo'),'other',Response))) %>% -->
-<!--   dplyr::filter(!grepl('earlier.stop',sample), -->
-<!--                 !grepl('_47$',sample), -->
-<!--                 !grepl('_73$',sample), -->
-<!--                 (diagnosis=='control') | ((timepoint %in% c('w0','w6')) & (treatment=='vdz4w') & (responder!='other'))) %>% -->
-<!--   droplevels() -->
+meta <- read.table(file.path(path,'GSE73661','GSE73661_Vedo.txt'),header=1,sep='\t') %>%
+  dplyr::mutate(sample=make.names(geo_accession)) %>%
+  tibble::rownames_to_column("accession")  %>%
+  dplyr::mutate(diagnosis=factor(ifelse(grepl('UC',sample),'UC','control'),levels=c('control','UC')),
+                treatment=factor(ifelse(diagnosis=='control','control',
+                                        ifelse(grepl('plac',sample),'placebo',
+                                               ifelse(grepl('IFX',sample),'IFX',
+                                                      ifelse(grepl('vdz4w',sample),'vdz4w','vdz8w')))),
+                                 levels=c('control','placebo','IFX','vdz4w','vdz8w')),
+                timepoint=factor(ifelse(diagnosis=='control','control',
+                                        ifelse(grepl('W0',sample),'w0',
+                                               ifelse(grepl('W4|W6',sample),'w6',
+                                                      ifelse(grepl('W12',sample),'w12',
+                                                             ifelse(grepl('W52',sample),'w52','other'))))),
+                                 levels=c('control','other','w0','w6','w12','w52')),
+                responder=ifelse(diagnosis=='control','control',ifelse(Response %in% c(0,'Placebo'),'other',Response))) %>%
+  dplyr::filter(!grepl('earlier.stop',sample),
+                !grepl('_47$',sample),
+                !grepl('_73$',sample),
+                (diagnosis=='control') | ((timepoint %in% c('w0','w6')) & (treatment=='vdz4w') & (responder!='other'))) %>%
+  droplevels()
 
-<!-- row.names(meta) <- meta$sample -->
-<!-- colnames(meta) <- gsub('.ch1','',colnames(meta)) -->
-<!-- data <- read.table(file.path(path,'GSE73661','GSE73661.txt'),header=1,sep='\t') -->
-<!-- data <- data[,colnames(data) %in% row.names(meta)] -->
+row.names(meta) <- meta$sample
+colnames(meta) <- gsub('.ch1','',colnames(meta))
+data <- read.table(file.path(path,'GSE73661','GSE73661.txt'),header=1,sep='\t')
+data <- data[,colnames(data) %in% row.names(meta)]
 
-<!-- GSE73661 <- SummarizedExperiment(assays=list(data),colData=meta[colnames(data),]) -->
-<!-- ``` -->
+GSE73661 <- SummarizedExperiment(assays=list(data),colData=meta[colnames(data),])
+```
 
-<!-- show a heatmap of gene expression -->
+show a heatmap of gene expression
 
-<!-- ```{r Fig_S17C,fig.width=10,fig.height=10} -->
-<!-- olink_genes_here <- setdiff(olink_genes, c('SCF','TNFSF12')) -->
+```{r Fig_S17C,fig.width=10,fig.height=10}
+olink_genes_here <- setdiff(olink_genes, c('SCF','TNFSF12'))
 
-<!-- ha <- HeatmapAnnotation(df=colData(GSE73661)[,c('timepoint','responder','diagnosis')], -->
-<!--                         show_legend=TRUE, -->
-<!--                         col=list('timepoint'=c('control'='#000000', -->
-<!--                                                'w0'='#ff7700', -->
-<!--                                                'w6'='#882e72'), -->
-<!--                                  'responder'=c('control'='#000000', -->
-<!--                                                'R'='#db2F26', -->
-<!--                                                'NR'='#34a048'), -->
-<!--                                  'diagnosis'=c('UC'='#1965b0', -->
-<!--                                                'control'='#000000'))) -->
+ha <- HeatmapAnnotation(df=colData(GSE73661)[,c('timepoint','responder','diagnosis')],
+                        show_legend=TRUE,
+                        col=list('timepoint'=c('control'='#000000',
+                                               'w0'='#ff7700',
+                                               'w6'='#882e72'),
+                                 'responder'=c('control'='#000000',
+                                               'R'='#db2F26',
+                                               'NR'='#34a048'),
+                                 'diagnosis'=c('UC'='#1965b0',
+                                               'control'='#000000')))
 
-<!-- mat <- t(scale(t(assay(GSE73661)[olink_genes_here,]))) -->
-<!-- Heatmap(mat, -->
-<!--         cluster_columns=TRUE, -->
-<!--         show_row_names=TRUE, -->
-<!--         show_column_names=FALSE, -->
-<!--         top_annotation=ha, -->
-<!--         column_names_gp=gpar(fontsize=6), -->
-<!--         row_names_gp=gpar(fontsize=6), -->
-<!--         name='z-score')  -->
-<!-- ``` -->
+mat <- t(scale(t(assay(GSE73661)[olink_genes_here,])))
+Heatmap(mat,
+        cluster_columns=TRUE,
+        show_row_names=TRUE,
+        show_column_names=FALSE,
+        top_annotation=ha,
+        column_names_gp=gpar(fontsize=6),
+        row_names_gp=gpar(fontsize=6),
+        name='z-score')
+```
 
-<!-- run a few contrasts: -->
+run a few contrasts:
 
-<!-- - w6vsw0 @ UC -->
-<!-- - UCvscontrol -->
+- w6vsw0 @ UC
+- UCvscontrol
 
-<!-- ```{r GSE73661_DE,fig.width=6,fig.height=5} -->
-<!-- library(limma) -->
-<!-- res <- list() -->
+```{r GSE73661_DE,fig.width=6,fig.height=5}
+library(limma)
+res <- list()
 
-<!-- take <- colData(GSE73661)$diagnosis=='UC' -->
-<!-- design <- model.matrix(~0+timepoint,data=colData(GSE73661)[take,]) -->
-<!-- fit <- eBayes(lmFit(assay(GSE73661)[,take], design)) -->
-<!-- contrast.matrix <- makeContrasts(w6vsw0=timepointw6-timepointw0,levels=design) -->
-<!-- contrast_fit <- eBayes(contrasts.fit(fit, contrast.matrix)) -->
-<!-- res[['w6vsw0@UC']] <- topTable(contrast_fit, coef='w6vsw0', n=Inf)  %>% -->
-<!--   tibble::rownames_to_column('gene') %>% -->
-<!--   dplyr::filter(gene %in% olink_genes)  %>% -->
-<!--   dplyr::mutate(contrast='w6vsw0@UC') -->
+take <- colData(GSE73661)$diagnosis=='UC'
+design <- model.matrix(~0+timepoint,data=colData(GSE73661)[take,])
+fit <- eBayes(lmFit(assay(GSE73661)[,take], design))
+contrast.matrix <- makeContrasts(w6vsw0=timepointw6-timepointw0,levels=design)
+contrast_fit <- eBayes(contrasts.fit(fit, contrast.matrix))
+res[['w6vsw0@UC']] <- topTable(contrast_fit, coef='w6vsw0', n=Inf)  %>%
+  tibble::rownames_to_column('gene') %>%
+  dplyr::filter(gene %in% olink_genes)  %>%
+  dplyr::mutate(contrast='w6vsw0@UC')
 
-<!-- design <- model.matrix(~0+diagnosis,data=colData(GSE73661)) -->
-<!-- fit <- eBayes(lmFit(assay(GSE73661), design)) -->
-<!-- contrast.matrix <- makeContrasts(UCvscontrol=diagnosisUC-diagnosiscontrol,levels=design) -->
-<!-- contrast_fit <- eBayes(contrasts.fit(fit, contrast.matrix)) -->
-<!-- res[['UCvscontrol']] <- topTable(contrast_fit, coef='UCvscontrol', n=Inf)  %>% -->
-<!--   tibble::rownames_to_column('gene') %>% -->
-<!--   dplyr::filter(gene %in% olink_genes)  %>% -->
-<!--   dplyr::mutate(contrast='UCvscontrol') -->
+design <- model.matrix(~0+diagnosis,data=colData(GSE73661))
+fit <- eBayes(lmFit(assay(GSE73661), design))
+contrast.matrix <- makeContrasts(UCvscontrol=diagnosisUC-diagnosiscontrol,levels=design)
+contrast_fit <- eBayes(contrasts.fit(fit, contrast.matrix))
+res[['UCvscontrol']] <- topTable(contrast_fit, coef='UCvscontrol', n=Inf)  %>%
+  tibble::rownames_to_column('gene') %>%
+  dplyr::filter(gene %in% olink_genes)  %>%
+  dplyr::mutate(contrast='UCvscontrol')
 
-<!-- GSE73661_DE <- do.call(rbind,res) %>% -->
-<!--     dplyr::select(gene,AveExpr,logFC,P.Value,adj.P.Val,contrast) -->
-<!-- ``` -->
+GSE73661_DE <- do.call(rbind,res) %>%
+    dplyr::select(gene,AveExpr,logFC,P.Value,adj.P.Val,contrast)
+```
 
-<!-- show volcano plots (only for Olink genes!) -->
+show volcano plots (only for Olink genes!)
 
-<!-- ```{r Fig_S17A_B,fig.width=4.5,fig.height=4} -->
-<!-- for (ct in c('w6vsw0@UC','UCvscontrol')) { -->
-<!--   res <- GSE73661_DE %>% dplyr::filter(contrast==ct) -->
-<!--   pl <-  res %>% -->
-<!--     ggplot(aes(x=logFC,y=-log10(P.Value))) +  -->
-<!--     geom_point(aes(color=(P.Value < .05)),size=.5) +  -->
-<!--     geom_text_repel(data=res %>% dplyr::filter(P.Value < .05), -->
-<!--                     aes(label=gene),segment.size=.25,segment.alpha=.25,color='red') + -->
-<!--     theme_classic() + -->
-<!--     geom_hline(yintercept=-log10(.05),linetype='dashed',size=.25) + -->
-<!--     geom_vline(xintercept=0,linetype='dashed',size=.25) + -->
-<!--     scale_color_manual(values=c('black','red'),guide=FALSE) + -->
-<!--     labs(title=ct) -->
-<!--   print(pl) -->
-<!-- } -->
-<!-- ``` -->
+```{r Fig_S17A_B,fig.width=4.5,fig.height=4}
+for (ct in c('w6vsw0@UC','UCvscontrol')) {
+  res <- GSE73661_DE %>% dplyr::filter(contrast==ct)
+  pl <-  res %>%
+    ggplot(aes(x=logFC,y=-log10(P.Value))) +
+    geom_point(aes(color=(P.Value < .05)),size=.5) +
+    geom_text_repel(data=res %>% dplyr::filter(P.Value < .05),
+                    aes(label=gene),segment.size=.25,segment.alpha=.25,color='red') +
+    theme_classic() +
+    geom_hline(yintercept=-log10(.05),linetype='dashed',size=.25) +
+    geom_vline(xintercept=0,linetype='dashed',size=.25) +
+    scale_color_manual(values=c('black','red'),guide=FALSE) +
+    labs(title=ct)
+  print(pl)
+}
+```
 
-```{r Fig_2a,fig.width=4.5,fig.height=3.5}
+```{r Fig_2A,fig.width=4,fig.height=3}
 DimPlot(CD4.integrated,label=TRUE) +
   scale_color_brewer(palette='Set3') +
   theme_void() +
@@ -1225,34 +1241,74 @@ FetchData(CD4.integrated, c('UMAP_1','UMAP_2','MKI67')) %>%
   labs(color='MKI67')
 ```
 
-<!-- ```{r CD4_material,fig.width=4.5,fig.height=3.5} -->
-<!-- DimPlot(CD4.integrated,group.by='Material') + -->
-<!--   scale_color_brewer(palette='Set1') + -->
-<!--   theme_void() + -->
-<!--   theme(legend.key.size=unit(3,'mm')) + -->
-<!--   labs(title='') -->
-<!-- ``` -->
+```{r CD4_umap_material,fig.width=4,fig.height=3}
+DimPlot(CD4.integrated,group.by='Material') +
+  scale_color_brewer(palette='Set1') +
+  theme_void() +
+  theme(legend.key.size=unit(3,'mm')) +
+  labs(title='')
+```
 
-<!-- ```{r Fig_S19D,fig.width=6,fig.height=20,cache=FALSE} -->
-<!-- DefaultAssay(CD4.integrated) <- 'RNA' -->
-<!-- if (!file.exists(file.path(path,'seurat','CD4_RNA_markers.csv'))) { -->
-<!--   markers <- FindAllMarkers(CD4.integrated, only.pos = TRUE, min.pct = 0.25, -->
-<!--                             thresh.use = 0.25, -->
-<!--                             print.bar=FALSE, verbose=FALSE) -->
-<!--   write.csv(markers,file.path(path,'seurat','CD4_RNA_markers.csv')) -->
-<!-- } -->
+```{r CD4_umap_patient,fig.width=4,fig.height=3}
+DimPlot(CD4.integrated,group.by='Patient.ID') +
+  theme_void() +
+  theme(legend.key.size=unit(3,'mm')) +
+  labs(title='')
+```
 
-<!-- markers <- read.csv(file.path(path,'seurat','CD4_RNA_markers.csv')) -->
 
-<!-- top10 <- markers %>%  -->
-<!--   group_by(cluster) %>%  -->
-<!--   top_n(10, avg_log2FC) -->
+plot the cluster composition
 
-<!-- DotPlot(CD4.integrated, features = rev(unique(top10$gene))) +  -->
-<!--   theme(axis.text.x=element_text(angle=90,hjust=1,vjust=.5)) + -->
-<!--   labs(x='',y='cluster') +  -->
-<!--   coord_flip() -->
-<!-- ``` -->
+```{r CD4_cluster_composition,fig.width=4,fig.height=3}
+CD4.integrated[['cluster']] <- Idents(CD4.integrated)
+for (col in c('Diagnosis','Patient.ID','Material')) {
+  CD4.integrated$tmp <- CD4.integrated@meta.data[,col]
+  pl <- rbind(CD4.integrated@meta.data %>% 
+                dplyr::group_by(cluster,tmp) %>%
+                dplyr::summarise(n=n()) %>%
+                dplyr::mutate(frac=n/sum(n),
+                              group='by cluster'),
+              CD4.integrated@meta.data %>% 
+                dplyr::group_by(tmp) %>%
+                dplyr::summarise(n=n()) %>%
+                dplyr::mutate(frac=n/sum(n),
+                              group='all',
+                              cluster='all')) %>%
+    dplyr::mutate(cluster=factor(cluster,levels=c('all',seq(1,12)))) %>%
+    ggplot(aes(x=cluster,y=frac,fill=tmp)) +
+    geom_col(outlier.shape=NA) +
+    theme_classic() +
+    theme(axis.text.x=element_text(angle=90,hjust=1,vjust=.5),
+          legend.key.size=unit(3,'mm'),
+          strip.background=element_blank()) +
+    facet_grid(.~group,scales='free_x',space='free_x') +
+    labs(x='',y='fraction cells',fill='')
+  print(pl)
+}
+```
+
+
+```{r CD4_markers,fig.width=14,fig.height=4.5,cache=FALSE}
+DefaultAssay(CD4.integrated) <- 'RNA'
+if (!file.exists(file.path(path,'seurat','CD4_RNA_markers.csv'))) {
+  markers <- FindAllMarkers(CD4.integrated, only.pos = TRUE, min.pct = 0.25,
+                            thresh.use = 0.25,
+                            print.bar=FALSE, verbose=FALSE)
+  write.csv(markers,file.path(path,'seurat','CD4_RNA_markers.csv'))
+}
+
+markers <- read.csv(file.path(path,'seurat','CD4_RNA_markers.csv'))
+
+top10 <- markers %>%
+  group_by(cluster) %>%
+  top_n(10, avg_log2FC)
+
+DotPlot(CD4.integrated, features = unique(top10$gene)) +
+  theme_classic() +
+  theme(axis.text.x=element_text(angle=90,hjust=1,vjust=.5),
+        legend.key.size=unit(3,'mm')) +
+  labs(x='',y='cluster')
+```
 
 ```{r Fig_2D, fig.width=2,fig.height=1,cache=FALSE}
 library(gtools)
@@ -1373,8 +1429,8 @@ genes <- list('activation'=c('HLA-DRA','CD40LG','CD38','CD69','CTLA4','AREG','IC
 if (!file.exists(file.path(path,'seurat','CD4_cluster1_markers.csv'))) { 
   CD4_cluster1_markers <- FindMarkers(CD4.integrated,test.use='LR',logfc.threshold=0,
                                       latent.vars=c('Material'),min.pct=0.0,
-                                      group.by='cluster1',ident.1='1',ident.2='other',
-                                      features=intersect(rownames(CD4.integrated),unname(unlist(genes))))
+                                      group.by='cluster1',ident.1='1',ident.2='other')
+#                                      features=intersect(rownames(CD4.integrated),unname(unlist(genes))))
   write.csv(CD4_cluster1_markers,file.path(path,'seurat','CD4_cluster1_markers.csv')) 
 } else {
   CD4_cluster1_markers <- read.csv(file.path(path,'seurat','CD4_cluster1_markers.csv'),row.names=1)
@@ -1383,39 +1439,49 @@ if (!file.exists(file.path(path,'seurat','CD4_cluster1_markers.csv'))) {
 
 as scatter plot
 
-```{r Fig_2F_alt1,fig.width=6,fig.height=4}
-tmp <- CD4_cluster1_markers %>% 
+```{r Fig_2E,fig.width=4,fig.height=3.5}
+top_genes <- CD4_cluster1_markers %>% 
   tibble::rownames_to_column('gene') %>%
-  dplyr::inner_join(data.frame(gene=unlist(genes)) %>% tibble::rownames_to_column('group') %>% dplyr::mutate(group=gsub('[0-9]*$','',group)),
-                    by='gene') %>%
-  dplyr::mutate(group=factor(group),
-                gene=factor(gene,levels=unname(unlist(genes))))
-
-ggplot(tmp %>% dplyr::filter(p_val_adj < .01), 
-  aes(x=1.e-4+pct.2,y=1.e-4+pct.1,fill=avg_log2FC)) +
+  dplyr::slice_max(abs(avg_log2FC),n=30) %>%
+  dplyr::pull(gene)
+top_genes <- setdiff(c(top_genes,c('ITGA4','ITGB7','CD38','MKI67','CXCR3','CCR7')),c('C12orf75','FLNA','HLA−DRB5','CD99','YWHAQ','HLA−DPB1'))
+ggplot(CD4_cluster1_markers,
+  aes(x=pct.2,y=pct.1)) +
   geom_abline(slope=1,intercept=0,size=.5,color='gray') +
   #geom_point(size=1,pch=20,alpha=.5,color='gray') +
-  geom_point(aes(shape=group),alpha=.5,size=2) +
-  geom_text_repel(aes(label=gene), force=5,max.overlaps=25,
-                  size=2.5,segment.alpha=.5,segment.size=.5) + #,nudge_x=.0,nudge_y=.1) +
-  scale_fill_gradient2(low='blue3',high='red3') +
+  geom_point(alpha=.5,size=1,color='gray30') +
+  geom_label_repel(data=CD4_cluster1_markers[top_genes,] %>%
+                     tibble::rownames_to_column('gene'),
+                  aes(label=gene), force=5,max.overlaps=25,
+                  label.padding=unit(.5,'mm'),
+                  label.size=0,
+                  color='black',
+                  size=2.5,segment.alpha=.5,segment.size=.5) +
+  scale_color_gradient2(low='blue3',mid='gray',high='red3') +
   labs(x='% positive cells other clusters',
        y='% positive cells cluster 1',
        fill='log2 fold change',
        size='p-value') +
   theme_classic() +
-  coord_cartesian(xlim=c(-.1,1),ylim=c(-.1,1)) +
-  guides(color=guide_legend(override.aes=list(shape=15,size=3,label="o"))) +
+  #coord_cartesian(xlim=c(-.1,1),ylim=c(-.1,1)) +
+  #guides(color=guide_legend(override.aes=list(shape=15,size=3,label="o"))) +
   scale_shape_manual(values=seq(21,26)) +
   theme(legend.key.size=unit(3,'mm'))
 ```
 
 as lollipop chart
 
-```{r Fig_2F_alt2,fig.width=10,fig.height=3}
-ggplot(tmp %>% dplyr::arrange(group,avg_log2FC), aes(x=gene,y=avg_log2FC,color=avg_log2FC)) +
+```{r Fig_2F,fig.width=10,fig.height=3}
+CD4_cluster1_markers %>% 
+  tibble::rownames_to_column('gene') %>%
+  dplyr::inner_join(data.frame(gene=unlist(genes)) %>% tibble::rownames_to_column('group') %>% dplyr::mutate(group=gsub('[0-9]*$','',group)),
+                    by='gene') %>%
+  dplyr::mutate(group=factor(group),
+                gene=factor(gene,levels=unname(unlist(genes)))) %>%
+  dplyr::arrange(group,avg_log2FC) %>%
+  ggplot(aes(x=gene,y=avg_log2FC,color=avg_log2FC)) +
   geom_segment(aes(xend=gene,yend=0)) +
-  geom_point(data=tmp,aes(size=-log10(p_val+1.e-30)),pch=19) +
+  geom_point(aes(size=-log10(p_val+1.e-30)),pch=19) +
   scale_color_gradient2(low='blue3',high='red3') +
   labs(y='avg. log2 fold change',
        x='',
@@ -1431,18 +1497,74 @@ ggplot(tmp %>% dplyr::arrange(group,avg_log2FC), aes(x=gene,y=avg_log2FC,color=a
         strip.clip='off')
 ```
 
-```{r Fig_S8D,fig.width=6,fig.height=2,cache=FALSE}
+```{r Fig_S8D,fig.width=4,fig.height=3.5,cache=FALSE}
 DefaultAssay(CD4.integrated) <- 'orig_ADT'
-DotPlot(CD4.integrated, features = c('CD25','CD127','PD-1','CD38','HLA-DR'),
-        group.by='cluster1', scale=FALSE) + 
+DotPlot(CD4.integrated, features = c('PD-1','CD25','CD45RA','CD127','CD38','CD103','CD4','HLA-DR'),
+        group.by='cluster1', scale=TRUE) + 
   scale_color_viridis_c() +
-  scale_y_discrete(limits=rev) +
+  scale_x_discrete(limits=rev) +
+  coord_flip() +
   theme(axis.text.x=element_text(angle=90,hjust=1,vjust=.5),
         legend.key.size=unit(3,'mm'),
-        legend.box='horizontal') +
+        legend.box='vertical') +
   labs(x='',y='')
 ```
 
+```{r CD4_clonotypes,fig.width=3,fig.height=2.5,cache=FALSE}
+CD4.integrated <- RenameCells(CD4.integrated, add.cell.id=CD4.integrated$orig.ident)
+
+tmp <- lapply(tcr_combined, function(x) x[x$barcode %in% Cells(CD4.integrated),])
+CD4.integrated <- combineExpression(tmp, CD4.integrated,  cloneCall="aa")
+CD4.integrated$cloneType <- factor(tolower(gsub('Single','Small',gsub(' .*','',CD4.integrated$cloneType))),
+                                   levels=c('small','medium','large','hyperexpanded'))
+
+CD4_md <- CD4.integrated@meta.data %>%
+  tibble::rownames_to_column('cell') 
+
+dfs <- list()
+for (cl in unique(CD4.integrated$cluster)) {
+  bcs <- CD4_md$cell[CD4_md$cluster==cl]
+  tcrcomb <- lapply(tcr_combined,
+                    function(x) x[(x$barcode %in% bcs) & !is.na(x$TCR1) & !is.na(x$TCR2),])
+  dfs[[cl]] <- clonalDiversity(tcrcomb,cloneCall='gene',group='sample',exportTable=TRUE,skip.boots=TRUE) %>%
+    dplyr::mutate(cluster=cl)
+}
+df <- do.call(rbind,dfs) %>%
+  dplyr::left_join(study %>% 
+                     dplyr::mutate(Patient.ID=gsub('[P]*([0-9]*)[\\/_][12]','P\\1',Characteristics.Patient.ID.),
+                                   Responder=Characteristics.Responder.,
+                                   Diagnosis=Characteristics.Diagnosis.,
+                                   Batch=gsub(' ','',gsub('_scRNAseq','',Parameter.Value.Method.)),
+                                   Timepoint=ifelse(grepl('_1_',Sample.Name),'Vedo_0d',
+                                                    ifelse(grepl('_2_',Sample.Name),'Vedo_6wk','ctrl'))) %>%
+                     dplyr::select(Patient.ID,Responder,Diagnosis,Sample.Name,Timepoint,Batch),
+                   by=c('sample'='Sample.Name')) %>%
+  dplyr::arrange(Patient.ID)
+
+ggplot(df %>% 
+         #dplyr::filter(Diagnosis=='UC') %>%
+         dplyr::mutate(cluster=factor(cluster,levels=as.character(seq(0,12)))), 
+       aes(x=cluster,y=`Inv.Simpson`)) +
+  geom_boxplot(aes(fill=cluster),outlier.shape=NA) +
+  geom_point(width=.25,size=1,color='gray30') +
+  theme_classic() +
+  coord_cartesian(clip='off') +
+  scale_y_log10() +
+  labs(x='cluster',y='Inv. Simpson',title='') +
+  theme(legend.key.size=unit(4,'mm'),
+        legend.box='horizontal',
+        legend.position='none',
+        axis.text.x=element_text(angle=90,hjust=1,vjust=.5),
+        strip.background=element_blank(),
+        strip.placement='outside')
+```
+
+<!-- ```{r tmp} -->
+<!-- tmp <- CD4_md %>% dplyr::filter(!is.na(CTaa)) %>% dplyr::select(cluster,sample) %>% table() %>% as.data.frame()  -->
+<!-- dplyr::inner_join(df,tmp,by=c('cluster','sample')) %>%  -->
+<!--   ggplot(aes(x=Freq,y=`Inv.Pielou`,label=cluster,color=cluster=='1')) +  -->
+<!--   geom_text() -->
+<!-- ``` -->
 ```{r sessionInfo}
 sessionInfo()
 ```
