@@ -2,11 +2,10 @@
 
 ## data access
 
-- processed data will be available from NCBI GEO under accession [GSEXXX](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSEXXX)
+- processed data will be available from NCBI GEO under accession [GSE261334](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE261334)
 - `pbmc_multimodal.h5seurat` is available [here](https://atlas.fredhutch.org/data/nygc/multimodal/pbmc_multimodal.h5seurat) 
-- MSigDB is available [here](http://www.gsea-msigdb.org/gsea/downloads.jsp)
 
-input data structure should looks like so (after stripping `GSEXXX_` prefixes from files):
+input data structure should looks like so (after stripping `GSMXXX_` prefixes from files):
 
 ```
 data
