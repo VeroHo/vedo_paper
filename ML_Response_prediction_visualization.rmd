@@ -1,0 +1,232 @@
+---
+title: "Visualization ML prediction"
+output: html_notebook
+---
+
+```{r lib_load, message = F}
+library(tidyverse)
+library(magrittr)
+library(rstatix)
+library(reshape2)
+library(ggpattern)
+library(ggpubr)
+
+
+theme_figures <- function() {
+  theme_minimal() %+replace%    #replace elements we want to change
+    theme(axis.title.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          legend.position = "bottom",
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          panel.background = element_blank(),
+          axis.line = element_line(colour = "black"),
+          axis.text = element_text(
+            size = 8),
+          axis.title = element_text(size = 8),
+          legend.title = element_text(size = 8),
+          legend.text = element_text(size = 8),
+          strip.text.x = element_text(size = 8)) }
+```
+# Model performances
+
+## AUC values
+
+```{r auc_read_in}
+files_accurcy <- intersect(list.files(path = "../PredictiveModels/Data/", pattern = "R_response_*"),
+                           list.files(path = "../PredictiveModels/Data/", pattern = "*pred_test.csv"))
+
+combined_data <- list()
+
+for (i in 1:length(files_accurcy)) {
+  data <- t(read.csv(paste0("../PredictiveModels/Data/", files_accurcy[i]), row.names = 1))
+  colnames(data) <- c('TrainingMeanAUC', 'TrainingStdAUC', 'TestingMeanAUC', 'TestingStdAUC')
+  data <- t(round(data, 2))
+  mat <- matrix(data, nrow = 2, ncol = 2)
+  rownames(mat) <- c("MeanAUC", "SEMAUC")
+  colnames(mat) <- c("Training", "Test")
+
+  combined_data[[i]] <- mat
+}
+# Tidy dataframe
+names(combined_data) <- gsub(pattern = "R_response_|_pred_test.csv", replacement = "", files_accurcy)
+data_tweaking <- names(combined_data)[grepl(pattern = "treatment|response", x = names(combined_data))]
+names(combined_data) <- ifelse(names(combined_data) %in% data_tweaking, names(combined_data), paste0(names(combined_data), "_response"))
+
+df_accuracy <- melt(combined_data) %>%
+  dcast(L1 + Var2 ~ Var1) %>%
+  set_colnames(c('Condition', "Set", "MeanAUC", 'SEMAUC')) %>%
+  mutate(Variable = gsub(Condition, pattern = "LinSVM_|PolynomialSVM_|RadialSVM_|LogReg_|RandomForest_", replacement = "")) %>%
+  mutate(Classifier = ifelse(grepl(pattern = "treatment", Variable), "Treatment", "Response")) %>%
+  mutate(Method = factor(ifelse(grepl(pattern = "LogReg", Condition), "LogReg",
+                                ifelse(grepl(pattern = "LinSVM", Condition), "LinSVM",
+                                       ifelse(grepl(pattern = "PolynomialSVM", Condition), "PolynomialSVM",
+                                              ifelse(grepl(pattern = "RadialSVM", Condition), "RadialSVM",
+                                                     ifelse(grepl(pattern = "RandomForest", Condition), "RandomForest", NA)))))), levels = c("LogReg", "LinSVM", "PolynomialSVM", "RadialSVM", "RandomForest")) %>%
+  mutate(DataSet = gsub(Variable, pattern = "_response|_treatment", replacement = "")) %>%
+  mutate(FeatureCutoff = ifelse(grepl("__0.05", DataSet), "95%",
+                                ifelse(grepl("__0.1", DataSet), "90%",
+                                       ifelse(grepl("__0.2$", DataSet), "80%",
+                                              ifelse(grepl("__0.25", DataSet), "75%",
+                                                     ifelse(grepl("__0.5", DataSet), "50%", "none")))))) %>%
+  mutate(FeatureEngineering = ifelse(FeatureCutoff == 'none', 'No', 'Yes'))
+```
+
+
+```{r auc_vis_single_modalities}
+# Code Supplement 18 A
+pdf("../PredictiveModels/results/S_18A.pdf", height = 2, width = 4)
+p <- df_accuracy %>%
+  filter(DataSet %in% c("Clinical", "CyTOF", "CyTOFab", "OLINK", "FACS")) %>%
+  filter(FeatureEngineering == "No") %>%
+  mutate(DataSet = factor(DataSet, levels = c("Clinical", "CyTOF", "CyTOFab", "OLINK", "FACS"))) %>%
+  mutate(DataSet = gsub("only", replacement = "", DataSet)) %>%
+  mutate(DataSet = gsub("CyTOFfreq", replacement = "CyTOF", DataSet)) %>%
+  mutate(DataSet = gsub("CyTOFA4B7", replacement = "CyTOFab", DataSet)) %>%
+  mutate(DataSet = factor(DataSet, levels = c("Clinical", "CyTOF", "CyTOFab", "OLINK", "FACS"))) %>%
+  mutate(Classifier = factor(Classifier, levels = c("Treatment", "Response"))) %>%
+  filter(Set == "Test") %>%
+  filter(Classifier == "Response") %>%
+  # Data visualization -------------------------------------------
+  ggplot(aes(x = DataSet, y = MeanAUC, fill = Method)) +
+  geom_bar(position = "dodge", stat = "identity", width = 0.6) +
+  geom_errorbar(aes(ymin = MeanAUC - SEMAUC, ymax = MeanAUC + SEMAUC), width = .2,
+                position = position_dodge(.6)) +
+  geom_hline(yintercept = 0.8, linetype = "dashed",
+             color = "black") +
+  geom_hline(yintercept = 0) +
+  geom_hline(yintercept = 0.5, linetype = "dashed",
+             color = "red") +
+  scale_fill_manual(values = c("#DDDDDD", "#AEADAD", "#7A7A7A", "#505050", "#1B1B1B")) +
+  theme_figures() +
+  ylab("AUC") +
+  coord_cartesian(ylim = c(0, 1))
+print(p)
+dev.off()
+# #-------------------------------------------------------------------------------------
+print(p)
+```
+
+
+```{r}
+good_models <- df_accuracy %>%
+  mutate(SelectionCriteria = MeanAUC - SEMAUC) %>%
+  filter(SelectionCriteria >= 0.5) %>%
+  filter(FeatureEngineering == "No") %>%
+  filter(Method == "LogReg") %>%
+  filter(Set == "Test") %>%
+  filter(Classifier == "Response") %>%
+  pull(DataSet)
+
+# Code Supplement 18 B
+pdf("../PredictiveModels/results/S_18B.pdf", height = 2.15, width = 8.1)
+p <- df_accuracy %>%
+  mutate(SelectionCriteria = MeanAUC - SEMAUC) %>%
+  filter(DataSet %in% good_models) %>%
+  filter(Method == "LogReg") %>%
+  filter(Set == "Test") %>%
+  filter(Classifier == "Response") %>%
+  mutate(DataSet = gsub(pattern = "_", replacement = "\n", DataSet)) %>%
+  mutate(FeatureCutoff = factor(FeatureCutoff, levels = c("none", "95%", "90%", "80%", "75%", "50%"))) %>%
+  mutate(DataSet = factor(DataSet, levels = c("OLINK", "FACS", "OLINK\nClinical", "OLINK\nFACS", "FACS\nCyTOF", "FACS\nCyTOFab", "FACS\nCyTOF\nClinical", "FACS\nCyTOFab\nClinical", "FACS\nCyTOF\nOLINK", "FACS\nClinical\nOLINK", "all\nCyTOF"))) %>%
+  ggplot(aes(x = DataSet, y = MeanAUC, fill = FeatureCutoff)) +
+  geom_bar(position = "dodge", stat = "identity", width = 0.6) +
+  geom_errorbar(aes(ymin = MeanAUC - SEMAUC, ymax = MeanAUC + SEMAUC), width = .2,
+                position = position_dodge(.6)) +
+  geom_hline(yintercept = 0) +
+  geom_hline(yintercept = 0.5, linetype = "dashed",
+             color = "red") +
+  geom_hline(yintercept = 0.8, linetype = "dashed",
+             color = "black") +
+  scale_fill_manual(values = c("#000000", "#3B3B3B", "#636363", "#929292", "#C3C3C3", "#DFDFDF")) +
+  theme_figures() +
+  ylab("AUC") +
+  coord_cartesian(ylim = c(0, 1)) +
+  guides(color = guide_legend(override.aes = list(size = 1))) +
+  theme(legend.key.size = unit(0.5, 'lines'))
+print(p)
+dev.off()
+
+print(p)
+```
+
+
+
+
+
+```{r}
+files_accurcy <- intersect(list.files(path = "../PredictiveModels/Data/", pattern = "R_response_*"),
+                           list.files(path = "../PredictiveModels/Data/", pattern = "*_coefficients.csv"))
+
+
+combined_data <- list()
+
+for (i in 1:length(files_accurcy)) {
+  data <- read.csv(paste0("../PredictiveModels/Data/", files_accurcy[i]))
+  rownames(data) <- paste0("K-fold", 1:dim(data)[1])
+  data <- data[, -1]
+
+  combined_data[[i]] <- data
+}
+names(combined_data) <- gsub(pattern = "R_|_coefficients.csv", replacement = "", files_accurcy)
+data_tweaking <- names(combined_data)[grepl(pattern = "treatment|response", x = names(combined_data))]
+names(combined_data) <- ifelse(names(combined_data) %in% data_tweaking, names(combined_data), paste0(names(combined_data), "_response"))
+
+df_features <- melt(combined_data) %>%
+  set_colnames(c('Feature', "Coefficient", "Condition")) %>%
+  mutate(Variable = gsub(Condition, pattern = "LinSVM_|PolynomialSVM_|RadialSVM_|LogReg_|RandomForest_", replacement = "")) %>%
+  mutate(Classifier = ifelse(grepl(pattern = "treatment", Variable), "Treatment", "Response")) %>%
+  mutate(Method = factor(ifelse(grepl(pattern = "LogReg", Condition), "LogReg",
+                                ifelse(grepl(pattern = "LinSVM", Condition), "LinSVM",
+                                       ifelse(grepl(pattern = "PolynomialSVM", Condition), "PolynomialSVM",
+                                              ifelse(grepl(pattern = "RadialSVM", Condition), "RadialSVM",
+                                                     ifelse(grepl(pattern = "RandomForest", Condition), "RandomForest", NA)))))), levels = c("LogReg", "LinSVM", "PolynomialSVM", "RadialSVM", "RandomForest")) %>%
+  mutate(DataSet = gsub(Variable, pattern = "_response|_treatment", replacement = "")) %>%
+  mutate(FeatureCutoff = ifelse(grepl("__0.05", DataSet), "95%",
+                                ifelse(grepl("__0.1", DataSet), "90%",
+                                       ifelse(grepl("__0.2$", DataSet), "80%",
+                                              ifelse(grepl("__0.25", DataSet), "75%",
+                                                     ifelse(grepl("__0.5", DataSet), "50%", "none")))))) %>%
+  mutate(FeatureEngineering = ifelse(FeatureCutoff == 'none', 'No', 'Yes'))
+```
+
+
+
+```{r}
+# Code Supplement 18D
+pdf("../PredictiveModels/results/S_18C.pdf", height = 3.7, width = 4.8)
+df_features %>%
+  mutate(absCoef = abs(Coefficient)) %>%
+  filter(Method == "LogReg") %>%
+  filter(DataSet %in% good_models) %>%
+  filter(RedPatientSet == 'No') %>%
+  filter(FeatureCutoff == "90%") %>%
+  mutate(DataSet = gsub(pattern = "_", replacement = "\n", DataSet)) %>%
+  mutate(DataSet = factor(DataSet, levels = c("FACS", "OLINK\nFACS", "FACS\nCyTOF", "FACS\nCyTOFab", "OLINK\nClinical", "FACS\nCyTOF\nClinical", "FACS\nCyTOFab\nClinical", "FACS\nCyTOF\nOLINK", "FACS\nClinical\nOLINK", "all\nCyTOF"))) %>%
+  mutate(Feature = factor(Feature, levels = c("Ki67_FACS", "GPR15_FACS", "CXCR3_FACS", "IL4_FACS", "CCR7_FACS", "IFNg_FACS", "Treg_FACS", "B7_FACS", "IL17A_FACS", "HLADR_FACS", 'Tbet_FACS', "CD103_FACS", "IL.10RA", "MCP.3", "TNF", "NT.3", "CCL25", "TNFB", "CASP.8", "AXIN1", "OSM", "CRP", "IL8", "NK.cells"))) %>%
+  group_by(Feature, DataSet) %>%
+  dplyr::count(Feature, DataSet) %>%
+  mutate(n_norm = n / 10) %>%
+  ggplot(aes(x = Feature, y = DataSet)) +
+  geom_point() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+        text = element_text(size = 8)) +
+  theme(axis.title.x = element_blank(),
+        legend.position = "bottom",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(colour = "black"),
+        axis.text = element_text(
+          size = 8),
+        axis.title = element_text(size = 8),
+        legend.title = element_text(size = 8),
+        legend.text = element_text(size = 8),
+        axis.text.x = element_text(size = 8),
+        strip.text.x = element_text(size = 8)) +
+  coord_flip()
+dev.off()
+```
+
+
+
