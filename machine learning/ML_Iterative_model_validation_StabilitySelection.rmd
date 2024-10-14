@@ -1,0 +1,1840 @@
+---
+title: "Visualizations of Classification pipeline"
+author: "Lisa M. Steinheuer"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+abstract: |
+  This script visualizes the output of the python pipeline to predict Vedolizumab treatment response in IBD patients. After the revision we decided to include LASSO and ELASTICNET to validate the feature selection process.
+output:
+  html_document:
+    toc: true # table of content true
+    toc_depth: 5  # upto five depths of headings (specified by #, ## and ###)
+    number_sections: true  ## if you want number sections at each table header
+    theme: united  # many options for theme, this one is my favorite.
+    highlight: tango  # specifies the syntax highlighting style
+---
+
+```{r}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+knitr::opts_chunk$set(fig.width = 5, fig.height = 4)
+```
+
+# Preface
+
+```{r lib_load, message = F}
+library(tidyverse)
+library(magrittr)
+library(rstatix)
+library(reshape2)
+library(ggpubr)
+
+project_name <- "Vedo_Stab"
+
+theme_lisa <- function() {
+
+  theme_minimal() %+replace%    #replace elements we want to change
+
+    theme(axis.title.x = element_blank(),
+          #axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          legend.position = "bottom",
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          panel.background = element_blank(),
+          axis.line = element_line(colour = "black"),
+          axis.text = element_text(
+            size = 6),
+          axis.title = element_text(size = 8),
+          legend.title = element_text(size = 8),
+          legend.text = element_text(size = 6),
+          strip.text.x = element_text(size = 6)) }
+
+color_vector <- c("Logistic Regression" = "#762a83",
+                  "LASSO" = "#9970ab",
+                  "ELASTICNET" = "#e7d4e8",
+                  "Linear SVM" = "#d9f0d3",
+                  "Polynomial SVM" = "#a6dba0",
+                  "Radial SVM" = "#5aae61",
+                  "Random Forest" = "#1b7837")
+
+
+color_vector_paper <- c("Logistic Regression" = "#C20000",
+                        #"LASSO" = "#9970ab",
+                        #"ELASTICNET" = "#e7d4e8",
+                        "Linear SVM" = "#cccccc",
+                        "Polynomial SVM" = "#969696",
+                        "Radial SVM" = "#636363",
+                        "Random Forest" = "#252525")
+
+cols_modality <- c("FACS" = "#c01c2c",
+                   "OLINK" = "#2e3e9b",
+                   "CyTOF" = "#5e2590",
+                   "CyTOF a4b7" = "#ab43a8",
+                   "Clinical" = "#656565")
+
+cols_feature_cutoff <- c("none" = "#252525", "50%" = "#636363", "75%" = "#969696", "80%" = "#bdbdbd", "90%" = "#C20000", "95%" = "#d9d9d9")
+
+
+check_robustness <- function(n_features, threshold, reference_bootstrap, which_modality) {
+  robust_features <- df_features %>%
+    filter(DataSet == that_modality) %>%
+    filter(Classifier == "Response") %>%
+    filter(Method == "Logistic Regression") %>%
+    filter(Combination == "Combination") %>%
+    select(Feature, Coefficient, DataSet, Run, Origin) %>% #filter(Coefficient ! = 0 ) %>%
+    mutate(absCoef = abs(Coefficient)) %>%
+    group_by(DataSet, Feature, Run) %>%
+    summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+    mutate(adjusted_mean = mean_features - sem_features) %>%
+    arrange(DataSet, desc(adjusted_mean)) %>%
+    group_by(DataSet, Run) %>%
+    top_n(n = round(n() * 0.1), wt = adjusted_mean) %>%
+    mutate(rank_per_run = row_number(desc(adjusted_mean))) %>%
+    mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+    group_by(Feature) %>%
+    #mutate(Feature2 = factor(Feature, levels = order_features)) %>%
+    filter(Bootstrap == reference_bootstrap) %>%
+    filter(rank_per_run <= n_features) %>%
+    pull(Feature)
+
+  in_how_many_runs <- df_features %>%
+    filter(DataSet == that_modality) %>%
+    filter(Classifier == "Response") %>%
+    filter(Method == "Logistic Regression") %>%
+    filter(Combination == "Combination") %>%
+    select(Feature, Coefficient, DataSet, Run, Origin) %>% #filter(Coefficient ! = 0 ) %>%
+    mutate(absCoef = abs(Coefficient)) %>%
+    group_by(DataSet, Feature, Run) %>%
+    summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+    mutate(adjusted_mean = mean_features - sem_features) %>%
+    arrange(DataSet, desc(adjusted_mean)) %>%
+    group_by(DataSet, Run) %>%
+    top_n(n = round(n() * threshold), wt = adjusted_mean) %>%
+    mutate(rank_per_run = row_number(desc(adjusted_mean))) %>%
+    mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+    filter(Bootstrap != reference_bootstrap) %>%
+    group_by(Bootstrap) %>%
+    summarise(contains_features = all(robust_features %in% Feature)) %>%
+    summarise(count = sum(contains_features))
+  output <- round(in_how_many_runs$count * 100 / 49, 2)
+  return(output)
+
+}
+
+```
+
+# Evaluation
+
+## Model performances
+
+```{r auc_read_in}
+
+# Data read in
+files_accurcy <- intersect(list.files(path = "/Iterative_model_validation/", pattern = "R_*"),
+                           list.files(path = "/Iterative_model_validation/", pattern = "*_testing.csv"))
+
+only_individual <- files_accurcy[grepl(pattern = "only", files_accurcy)]
+
+combined_data <- list()
+
+for (i in 1:length(files_accurcy)) {
+  data <- t(read.csv(paste0("/Iterative_model_validation/", files_accurcy[i]), row.names = 1))
+
+  combined_data[[i]] <- data
+}
+# Data tweaking
+names(combined_data) <- gsub(pattern = "R_|_testing.csv", replacement = "", files_accurcy)
+
+
+df_testing_performance <- melt(combined_data) %>%
+  dcast(L1 + Var2 ~ Var1) %>%
+  set_colnames(c('Condition', "remove_col", "Run", "Accuracy", 'F1')) %>%
+  select(-remove_col) %>%
+  mutate(Variable = gsub(Condition, pattern = "LogisticRegression_|LASSO_|ELASTICNET_|ELASTICNET_|LinearSVM_|PolynomialSVM_|RadialSVM_|RandomForest_", replacement = "")) %>%
+  mutate(Method = factor(ifelse(grepl(pattern = "LogisticRegression_", Condition), "Logistic Regression",
+                                ifelse(grepl(pattern = "LASSO_", Condition), "LASSO",
+                                       ifelse(grepl(pattern = "ELASTICNET_", Condition), "ELASTICNET",
+                                              ifelse(grepl(pattern = "LinearSVM_", Condition), "Linear SVM",
+                                                     ifelse(grepl(pattern = "PolynomialSVM_", Condition), "Polynomial SVM",
+                                                            ifelse(grepl(pattern = "RadialSVM_", Condition), "Radial SVM",
+                                                                   ifelse(grepl(pattern = "RandomForest_", Condition), "Random Forest", NA))))))), levels = c("Logistic Regression", "LASSO", "ELASTICNET", "Linear SVM", "Polynomial SVM", "Radial SVM", "Random Forest"))) %>%
+  mutate(DataSet = gsub(Variable, pattern = "LogisticRegression_|LASSO_|ELASTICNET_|ELASTICNET_|LinearSVM_|PolynomialSVM_|RadialSVM_|RandomForest_", replacement = "")) %>%
+  mutate(DataSet = gsub("^_", replacement = "", DataSet)) %>%
+  mutate(Run = gsub(pattern = ".*_Run", replacement = "", x = DataSet)) %>%
+  mutate(DataSet = gsub(pattern = "_Run[0-9]|_Run[0-9][0-9]", replacement = "", DataSet)) %>%
+  mutate(Combination = ifelse(DataSet %in% c("Clinical", "CyTOF", "CyTOFa4b7", "OLINK", "FACS"), yes = "Single", no = "Combination")) %>%
+  mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50)))
+
+```
+
+
+## The model coefficients
+
+```{r prepare_coef}
+files_accurcy <- intersect(list.files(path = "/Iterative_model_validation/", pattern = "R_*"),
+                           list.files(path = "/Iterative_model_validation/", pattern = "*_coefficients.csv"))
+
+only_individual <- files_accurcy[grepl(pattern = "only", files_accurcy)]
+
+combined_data <- list()
+
+for (i in 1:length(files_accurcy)) {
+  data <- read.csv(paste0("/Iterative_model_validation/", files_accurcy[i]))
+  rownames(data) <- paste0("K-fold", 1:dim(data)[1])
+  data <- data[, -1]
+
+  combined_data[[i]] <- data
+}
+names(combined_data) <- gsub(pattern = "R_|_coefficients.csv", replacement = "", files_accurcy)
+data_tweaking <- names(combined_data)[grepl(pattern = "treatment|response", x = names(combined_data))]
+names(combined_data) <- ifelse(names(combined_data) %in% data_tweaking, names(combined_data), paste0(names(combined_data), "_response"))
+
+df_features <- melt(combined_data) %>%
+  #dcast(L1 + Var2 ~ Var1) %>%
+  set_colnames(c('Feature', "Coefficient", "Condition")) %>%
+  mutate(Variable = gsub(Condition, pattern = "LinSVM_|PolynomialSVM_|RadialSVM_|LogReg_|RandomForest_", replacement = "")) %>%
+  mutate(Classifier = ifelse(grepl(pattern = "treatment", Variable), "Treatment", "Response")) %>%
+  mutate(Method = factor(ifelse(grepl(pattern = "LogisticRegression_", Condition), "Logistic Regression",
+                                ifelse(grepl(pattern = "LASSO_", Condition), "LASSO",
+                                       ifelse(grepl(pattern = "ELASTICNET_", Condition), "ELASTICNET",
+                                              ifelse(grepl(pattern = "LinearSVM_", Condition), "Linear SVM",
+                                                     ifelse(grepl(pattern = "PolynomialSVM_", Condition), "Polynomial SVM",
+                                                            ifelse(grepl(pattern = "RadialSVM_", Condition), "Radial SVM",
+                                                                   ifelse(grepl(pattern = "RandomForest_", Condition), "Random Forest", NA))))))), levels = c("Logistic Regression", "LASSO", "ELASTICNET", "Linear SVM", "Polynomial SVM", "Radial SVM", "Random Forest"))) %>%
+  mutate(DataSet = gsub(Variable, pattern = "_response|_treatment", replacement = "")) %>%
+  mutate(DataSet = gsub(DataSet, pattern = "LogisticRegression_|LASSO_|ELASTICNET_|ELASTICNET_|LinearSVM_|PolynomialSVM_|RadialSVM_|RandomForest_", replacement = "")) %>%
+  mutate(DataSet = gsub("^_", replacement = "", DataSet)) %>%
+  mutate(Run = gsub(pattern = ".*_Run", replacement = "", x = DataSet)) %>%
+  mutate(DataSet = gsub(pattern = "_Run[0-9]|_Run[0-9][0-9]", replacement = "", DataSet)) %>%
+  mutate(Combination = ifelse(DataSet %in% c("Clinical", "CyTOF", "CyTOFa4b7", "OLINK", "FACS"), yes = "Single", no = "Combination"))
+```
+
+## Adding Origin
+
+```{r fig.height = 3}
+df_features <- df_features %>%
+  mutate(Origin = factor(ifelse(grepl(patter = "_FACS", x = Feature), yes = "FACS", no =
+    ifelse(grepl(patter = "_A4B7", x = Feature), yes = "CyTOF a4b7", no =
+      ifelse(Feature %in% c("Basophils", "cDCs", "cMonocytes", "Eosinophils", "gd.T.cells", "Memory.B.cells", "Naive.B.cells", "MAIT.cells", "Memory.CD4", "Memory.CD8", "Naive.CD4", "Naive.CD8", "ncMonocytes", "NK.cells", "pDCs", "Plasmablasts"), yes = "CyTOF", no =
+        ifelse(Feature %in% c('Leukocytes', 'CRP', 'Thrombocytes', 'Hemoglobin', 'Neutrophils', 'TNF_pretreated'), yes = "Clinical", no = "OLINK")))), levels = c("FACS", "OLINK", "CyTOF", "CyTOF a4b7", "Clinical")))
+
+```
+
+This code chunk checks how often a feature was included in the top 10 features from the non-feature selected data. I used the non-feature engineered data because otherwise I cannot extract the top 10 features per run. The smallest feature space was 22.
+All in all, we have 18 model combinations.
+I implemented it in a way, that we have for each non-responder (4) 4 different responder pairs
+
+## Functions
+
+```{r fig.width = 15, fig.height = 10}
+
+Analyse_Modality_overview <- function(which_modality, which_classifier) {
+
+  if (which_classifier %in% c("LASSO", "ELASTICNET")) {
+    order_features <- df_features %>%
+      filter(DataSet == that_modality) %>%
+      filter(Classifier == "Response") %>%
+      filter(Method == which_classifier) %>%
+      filter(Combination == "Combination") %>%
+      select(Feature, Coefficient, DataSet, Run, Origin) %>%
+      filter(Coefficient != 0) %>%
+      mutate(absCoef = abs(Coefficient)) %>%
+      group_by(DataSet, Feature, Run) %>%
+      summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+      mutate(adjusted_mean = mean_features - sem_features) %>%
+      arrange(DataSet, desc(adjusted_mean)) %>%
+      group_by(Feature, Run) %>%
+      dplyr::count(Feature) %>%
+      mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+      group_by(Feature) %>%
+      add_count(name = "Frequency") %>%
+      arrange(-Frequency) %>%
+      pull(Feature) %>%
+      unique()
+
+
+    p1 <- df_features %>%
+      filter(DataSet == which_modality) %>%
+      filter(Classifier == "Response") %>%
+      filter(Method == which_classifier) %>%
+      filter(Combination == "Combination") %>%
+      select(Feature, Coefficient, DataSet, Run, Origin) %>%
+      filter(Coefficient != 0) %>%
+      mutate(absCoef = abs(Coefficient)) %>%
+      group_by(DataSet, Feature, Run) %>%
+      summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+      mutate(adjusted_mean = mean_features - sem_features) %>%
+      arrange(DataSet, desc(adjusted_mean)) %>%
+      mutate(rank_per_run = row_number(desc(adjusted_mean))) %>%
+      mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+      group_by(Feature) %>%
+      mutate(Feature2 = factor(Feature, levels = order_features)) %>%
+      ggplot(aes(x = Feature2, y = Bootstrap, fill = rank_per_run)) +
+      geom_tile() +
+      theme_minimal() +
+      geom_text(aes(label = rank_per_run), size = 2.3) +
+      theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+      scale_fill_gradient("Rank", low = "#737373", high = "#f0f0f0", limits = c(0, 10)) +
+      xlab("Features") +
+      ylab("Within \n each iteration") +
+      theme(axis.title.x = element_blank(),
+            axis.text.x = element_blank(),
+            axis.ticks.x = element_blank()) +
+      theme(legend.position = "none")
+
+  } else if (which_classifier == "Logistic Regression") {
+    order_features <- df_features %>%
+      filter(DataSet == which_modality) %>%
+      filter(Classifier == "Response") %>%
+      filter(Method == which_classifier) %>%
+      filter(Combination == "Combination") %>%
+      select(Feature, Coefficient, DataSet, Run, Origin) %>%
+      mutate(absCoef = abs(Coefficient)) %>%
+      group_by(DataSet, Feature, Run) %>%
+      summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+      mutate(adjusted_mean = mean_features - sem_features) %>%
+      arrange(DataSet, desc(adjusted_mean)) %>%
+      group_by(DataSet, Run) %>%
+      top_n(n = round(n() * 0.1), wt = adjusted_mean) %>%
+      group_by(Feature, Run) %>%
+      dplyr::count(Feature) %>%
+      mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+      group_by(Feature) %>%
+      add_count(name = "Frequency") %>%
+      arrange(-Frequency) %>%
+      pull(Feature) %>%
+      unique()
+
+    p1 <- df_features %>%
+      filter(DataSet == which_modality) %>%
+      filter(Classifier == "Response") %>%
+      filter(Method == which_classifier) %>%
+      filter(Combination == "Combination") %>%
+      select(Feature, Coefficient, DataSet, Run, Origin) %>% #filter(Coefficient ! = 0 ) %>%
+      mutate(absCoef = abs(Coefficient)) %>%
+      group_by(DataSet, Feature, Run) %>%
+      summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+      mutate(adjusted_mean = mean_features - sem_features) %>%
+      arrange(DataSet, desc(adjusted_mean)) %>%
+      group_by(DataSet, Run) %>%
+      top_n(n = round(n() * 0.1), wt = adjusted_mean) %>%
+      mutate(rank_per_run = row_number(desc(adjusted_mean))) %>%
+      mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+      group_by(Feature) %>%
+      mutate(Feature2 = factor(Feature, levels = order_features)) %>%
+      ggplot(aes(x = Feature2, y = Bootstrap, fill = rank_per_run)) +
+      geom_tile() +
+      theme_minimal() +
+      geom_text(aes(label = rank_per_run), size = 2.3) +
+      theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+      scale_fill_gradient("Rank", low = "#737373", high = "#f0f0f0", limits = c(0, 10)) +
+      xlab("Features") +
+      ylab("Within \n each iteration") +
+      theme(axis.title.x = element_blank(),
+            axis.text.x = element_blank(),
+            axis.ticks.x = element_blank()) +
+      theme(legend.position = "none") }
+
+  p2 <- df_features %>%
+    filter(DataSet == which_modality) %>%
+    filter(Classifier == "Response") %>%
+    filter(Method == which_classifier) %>%
+    filter(Combination == "Combination") %>%
+    select(Feature, Coefficient, DataSet, Run, Origin) %>%
+    filter(Feature %in% order_features) %>%
+    mutate(Feature2 = factor(Feature, levels = order_features)) %>%
+    ggplot(aes(x = Feature2, y = 1, fill = Origin)) +
+    geom_tile() +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    scale_fill_manual(values = cols_modality) +
+    ylab("") +
+    xlab("Feature") +
+    theme(axis.title.y = element_blank(),
+          axis.text.y = element_blank(),
+          axis.ticks.y = element_blank()) +
+    theme(legend.position = "bottom")
+
+  p3 <- df_testing_performance %>%
+    filter(DataSet == which_modality) %>%
+    filter(Method == which_classifier) %>%
+    filter(Combination == "Combination") %>%
+    ggplot(aes(x = Method, y = Bootstrap, fill = Accuracy)) +
+    geom_tile() +
+    geom_text(aes(label = round(Accuracy, 1))) +
+    scale_fill_gradient(low = "white", high = "#fc9272", limits = c(0, 1)) +
+    theme_minimal() +
+    theme(axis.text.x = element_blank(), axis.title.x = element_blank()) +
+    theme(axis.title.y = element_blank(),
+          # axis.text.y = element_blank(),
+          axis.ticks.y = element_blank())
+
+
+  p4 <- cowplot::plot_grid(p1, p3, p2, labels = c('', '', ''), ncol = 2, rel_heights = c(0.8, 0.3), rel_widths = c(1, 0.15), align = 'v')
+
+  ggsave(p4, file = paste0("../", project_name, "_Stability_Top10_", which_modality, "_", which_classifier, ".pdf"), width = 14, height = 9)
+
+  print(p4)
+  return }
+```
+
+```{r}
+run_stability_analysis <- function(which_modality, rerun) {
+
+  rerun_script <- rerun
+
+  if (rerun_script == 1) {
+    stability_landscape <- data.frame("Number of features" = integer(), "Threshold (top X%)" = integer(), "Reference Run" = integer(), "Stability" = integer())
+    for (run in 1:50) {
+      stability_landscape_iteration <- data.frame("Number of features" = integer(), "Threshold (top X%)" = integer(), "Reference Run" = integer(), "Stability" = integer())
+      for (n_feat in 1:10) {
+        for (cutoff in seq(0.1, 1.0, by = 0.1)) {
+          how_many_features <- n_feat
+          define_threshold <- cutoff
+          define_reference <- run
+          stability_value <- check_robustness(n_features = how_many_features, threshold = define_threshold, reference_bootstrap = define_reference, which_modality = that_modality)
+          stability_landscape_int <- data.frame("Number of features" = how_many_features, "Threshold (top X%)" = define_threshold * 100, "Reference Run" = define_reference, "Stability" = stability_value)
+          stability_landscape_iteration <- rbind(stability_landscape_iteration, stability_landscape_int) } }
+
+      print(mean(stability_landscape$Stability))
+      
+      stability_landscape <- rbind(stability_landscape, stability_landscape_iteration)
+    }
+    save(stability_landscape, file = paste0('../StabilityRun_', that_modality, ".RData"))
+
+
+  p1 <- stability_landscape %>%
+    set_colnames(c("Number of features", "Threshold (top X%)", "Reference Run", "Stability")) %>%
+    group_by(`Reference Run`) %>%
+    summarise(`Mean Stability` = mean(Stability)) %>%
+    ungroup() %>%
+    ggplot(aes(x = 1, y = `Reference Run`, fill = `Mean Stability`)) +
+    geom_tile() +
+    theme_minimal() +
+    geom_text(aes(label = round(`Mean Stability`, 2)), size = 3.5) +
+    theme(axis.title.x = element_blank(),
+          axis.text.x = element_blank(),
+          axis.ticks.x = element_blank()) +
+    scale_fill_gradient("Stability", low = "#fee5d9", high = "#a50f15", limits = c(0, 100)) +
+    scale_x_continuous(breaks = seq(1, 1, by = 1)) +
+    scale_y_continuous(breaks = seq(0, 100, by = 10)) +
+    ylab(paste("Iterations"))
+
+  print(p1)
+  ggsave(p1, file = paste0("../", project_name, "_StabilityAnalysis_", that_modality, "_Run.pdf"), width = 2, height = 10)
+
+  refine_reference_run <- stability_landscape %>%
+    set_colnames(c("Number of features", "Threshold (top X%)", "Reference Run", "Stability")) %>%
+    group_by(`Reference Run`) %>%
+    summarise(`Mean Stability` = mean(Stability)) %>%
+    filter(`Mean Stability` == max(`Mean Stability`)) %>%
+    slice(1)
+
+  print(refine_reference_run)
+
+
+  p2 <- stability_landscape %>%
+    set_colnames(c("Number of features", "Threshold (top X%)", "Reference Run", "Stability")) %>%
+    filter(`Reference Run` == refine_reference_run$`Reference Run`) %>%
+    ggplot(aes(x = `Number of features`, y = `Threshold (top X%)`, fill = Stability)) +
+    geom_tile() +
+    theme_minimal() +
+    geom_text(aes(label = Stability), size = 2.5) +
+    scale_fill_gradient("Stability", low = "#fee5d9", high = "#a50f15", limits = c(0, 100)) +
+    scale_x_continuous(breaks = seq(1, 10, by = 1)) +
+    scale_y_continuous(breaks = seq(10, 100, by = 10)) +
+    xlab(paste("Number of features")) +
+    labs(title = paste("Reference Run", refine_reference_run$`Reference Run`))
+  ggsave(p2, file = paste0("../StabilityAnalysis_", that_modality, "_RunRef.pdf"), width = 5, height = 4)
+  data.frame(stability_landscape %>%
+               set_colnames(c("Number of features", "Threshold (top X%)", "Reference Run", "Stability")) %>%
+               filter(`Reference Run` == refine_reference_run$`Reference Run`) %>%
+               arrange(desc(Stability), `Threshold (top X%)`) %>%
+               filter(`Number of features` >= 5) %>%
+               filter(`Threshold (top X%)` < 40))
+
+  return(stability_landscape) }
+
+```
+
+## 4 best modalities
+
+### OLINK_FACS
+
+```{r fig.width = 15, fig.height = 10}
+that_modality <- "OLINK_FACS"
+that_classifier <- "Logistic Regression"
+Analyse_Modality_overview(which_modality = that_modality, which_classifier = that_classifier)
+
+number_of_features <- df_features %>%
+  filter(DataSet == that_modality) %>%
+  filter(Classifier == "Response") %>%
+  filter(Method == "Logistic Regression") %>%
+  filter(Combination == "Combination") %>%
+  select(Feature, Coefficient, DataSet, Run, Origin) %>% #filter(Coefficient ! = 0 ) %>%
+  mutate(absCoef = abs(Coefficient)) %>%
+  group_by(DataSet, Feature, Run) %>%
+  summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+  mutate(adjusted_mean = mean_features - sem_features) %>%
+  arrange(DataSet, desc(adjusted_mean)) %>%
+  group_by(DataSet, Run) %>%
+  top_n(n = round(n() * 0.1), wt = adjusted_mean) %>%
+  filter(Run == 0) %>%
+  pull(Feature) %>%
+  length()
+auc_landscape <- data.frame("Number of features" = integer(), "Reference Run" = integer(), "AUC" = integer())
+
+for (run in 1:50) {
+  for (n_feat in 1:number_of_features) {
+    stability_landscape_iteration <- data.frame("Number of features" = integer(), "Threshold (top X%)" = integer(), "Reference Run" = integer(), "Included" = integer(), "Excluded" = integer())
+    for (cutoff in seq(0, 1.0, by = 0.1)) {
+      robust_features <- df_features %>%
+        filter(DataSet == that_modality) %>%
+        filter(Classifier == "Response") %>%
+        filter(Method == "Logistic Regression") %>%
+        filter(Combination == "Combination") %>%
+        select(Feature, Coefficient, DataSet, Run, Origin) %>% #filter(Coefficient ! = 0 ) %>%
+        mutate(absCoef = abs(Coefficient)) %>%
+        group_by(DataSet, Feature, Run) %>%
+        summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+        mutate(adjusted_mean = mean_features - sem_features) %>%
+        arrange(DataSet, desc(adjusted_mean)) %>%
+        group_by(DataSet, Run) %>%
+        top_n(n = round(n() * 0.1), wt = adjusted_mean) %>%
+        mutate(rank_per_run = row_number(desc(adjusted_mean))) %>%
+        mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+        group_by(Feature) %>%
+        #mutate(Feature2 = factor(Feature, levels = order_features)) %>%
+        filter(Bootstrap == run) %>%
+        filter(rank_per_run <= n_feat) %>%
+        pull(Feature)
+
+      stability_value <- df_features %>%
+        filter(DataSet == that_modality) %>%
+        filter(Classifier == "Response") %>%
+        filter(Method == "Logistic Regression") %>%
+        filter(Combination == "Combination") %>%
+        select(Feature, Coefficient, DataSet, Run, Origin) %>% #filter(Coefficient ! = 0 ) %>%
+        mutate(absCoef = abs(Coefficient)) %>%
+        group_by(DataSet, Feature, Run) %>%
+        summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+        mutate(adjusted_mean = mean_features - sem_features) %>%
+        arrange(DataSet, desc(adjusted_mean)) %>%
+        group_by(DataSet, Run) %>%
+        top_n(n = round(n() * cutoff), wt = adjusted_mean) %>%
+        mutate(rank_per_run = row_number(desc(adjusted_mean))) %>%
+        mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+        filter(Bootstrap != run) %>%
+        group_by(Bootstrap) %>%
+        summarise(contains_features = all(robust_features %in% Feature)) %>%
+        summarise(count = sum(contains_features)) %>%
+        mutate(Included = count / 49) %>%
+        mutate(Excluded = (49 - count) / 49)
+
+      stability_landscape_int <- data.frame("Number of features" = n_feat, "Threshold (top X%)" = cutoff, "Reference Run" = run, "Included" = stability_value$Included, "Excluded" = stability_value$Excluded)
+      stability_landscape_iteration <- rbind(stability_landscape_iteration, stability_landscape_int) }
+    auc_it <- sum(diff(stability_landscape_iteration$Threshold..top.X..) *
+                    (stability_landscape_iteration$Included[-1] + stability_landscape_iteration$Included[-length(stability_landscape_iteration$Included)]) / 2)
+    auc_landscape_it <- data.frame("Number of features" = n_feat, "Reference Run" = run, "AUC" = auc_it)
+    auc_landscape <- rbind(auc_landscape, auc_landscape_it)
+  }
+}
+
+save(auc_landscape, file = paste0('../StabilityRun_', that_modality, ".RData"))
+
+p1 <- auc_landscape %>%
+  set_colnames(c("Number of features", "Reference Run", "AUC")) %>%
+  group_by(`Reference Run`) %>%
+  summarise(`Mean AUC` = mean(AUC)) %>%
+  ungroup() %>%
+  ggplot(aes(x = 1, y = `Reference Run`, fill = `Mean AUC`)) +
+  geom_tile() +
+  theme_minimal() +
+  geom_text(aes(label = round(`Mean AUC`, 2)), size = 3.5) +
+  theme(axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank()) +
+  scale_fill_gradient("AUC", low = "#fee5d9", high = "#a50f15", limits = c(0, 1)) +
+  scale_x_continuous(breaks = seq(1, 1, by = 1)) +
+  scale_y_continuous(breaks = seq(0, 100, by = 10)) +
+  ylab(paste("Iterations"))
+
+print(p1)
+ggsave(p1, file = paste0("../", project_name, "_StabilityAnalysis_", that_modality, "_Run.pdf"), width = 2, height = 10)
+
+refine_reference_run <- auc_landscape %>%
+  set_colnames(c("Number of features", "Reference Run", "AUC")) %>%
+  group_by(`Reference Run`) %>%
+  summarise(`Mean AUC` = mean(AUC)) %>%
+  filter(`Mean AUC` == max(`Mean AUC`)) %>%
+  slice(1)
+
+print(refine_reference_run)
+
+
+p2 <- auc_landscape %>%
+  set_colnames(c("Number of features", "Reference Run", "AUC")) %>%
+  filter(`Reference Run` == refine_reference_run$`Reference Run`) %>%
+  ggplot(aes(x = `Number of features`, y = AUC, fill = AUC)) +
+  geom_bar(stat = "identity") +
+  theme_minimal() +
+  geom_hline(yintercept = 0.7, linetype = "dashed", color = "red") +
+  scale_fill_gradient("AUC", low = "#fee5d9", high = "#a50f15", limits = c(0, 1)) +
+  scale_x_continuous(breaks = seq(1, number_of_features, by = 1)) +
+  scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, by = 0.25)) +
+  xlab(paste("Number of features")) +
+  labs(title = paste("Reference Run", refine_reference_run$`Reference Run`))
+ggsave(p2, file = paste0("~/Desktop/", project_name, "_StabilityAnalysis_", that_modality, "_RunRef.pdf"), width = 5, height = 2)
+
+how_many_features <- 5
+
+feature_panel_olink_facs <- df_features %>%
+  filter(DataSet == that_modality) %>%
+  filter(Classifier == "Response") %>%
+  filter(Method == that_classifier) %>%
+  filter(Combination == "Combination") %>%
+  select(Feature, Coefficient, DataSet, Run, Origin) %>% #filter(Coefficient ! = 0 ) %>%
+  mutate(absCoef = abs(Coefficient)) %>%
+  group_by(DataSet, Feature, Run) %>%
+  summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+  mutate(adjusted_mean = mean_features - sem_features) %>%
+  arrange(DataSet, desc(adjusted_mean)) %>%
+  group_by(DataSet, Run) %>%
+  top_n(n = how_many_features, wt = adjusted_mean) %>%
+  mutate(rank_per_run = row_number(desc(adjusted_mean))) %>%
+  mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+  group_by(Feature) %>%
+  filter(Bootstrap == refine_reference_run$`Reference Run`) %>%
+  pull(Feature)
+
+print(feature_panel_olink_facs)
+
+feature_info_OLINK_FACS <- df_features %>%
+  filter(DataSet == that_modality) %>%
+  filter(Classifier == "Response") %>%
+  filter(Method == that_classifier) %>%
+  filter(Combination == "Combination") %>%
+  select(Feature, Coefficient, DataSet, Run, Origin) %>% #filter(Coefficient ! = 0 ) %>%
+  mutate(absCoef = abs(Coefficient)) %>%
+  mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+  filter(Bootstrap == refine_reference_run$`Reference Run`) %>%
+  filter(Feature %in% feature_panel_olink_facs)
+
+p1 <- df_features %>%
+  filter(DataSet == that_modality) %>%
+  filter(Classifier == "Response") %>%
+  filter(Method == that_classifier) %>%
+  filter(Combination == "Combination") %>%
+  select(Feature, Coefficient, DataSet, Run, Origin) %>% #filter(Coefficient ! = 0 ) %>%
+  mutate(absCoef = abs(Coefficient)) %>%
+  mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+  filter(Bootstrap == refine_reference_run$`Reference Run`) %>%
+  ungroup %>%
+  filter(Feature %in% feature_panel_olink_facs) %>%
+  mutate(Feature = factor(Feature, levels = feature_panel_olink_facs)) %>%
+  ggplot(aes(x = Feature, y = absCoef)) +
+  geom_boxplot() +
+  expand_limits(y = c(0, 0.3)) +
+  theme_minimal() +
+  ylab("Absolute Feature Coefficient") +
+  xlab("Features") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+print(p1)
+
+ggsave(p1, file = paste0("../", project_name, "_Bestfeatures_", that_modality, ".pdf"), width = 3, height = 2)
+
+p1 <- df_features %>%
+  filter(DataSet == that_modality) %>%
+  filter(Classifier == "Response") %>%
+  filter(Method == that_classifier) %>%
+  filter(Combination == "Combination") %>%
+  select(Feature, Coefficient, DataSet, Run, Origin) %>% #filter(Coefficient ! = 0 ) %>%
+  mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+  filter(Bootstrap == refine_reference_run$`Reference Run`) %>%
+  ungroup %>%
+  filter(Feature %in% feature_panel_olink_facs) %>%
+  mutate(Feature = factor(Feature, levels = feature_panel_olink_facs)) %>%
+  ggplot(aes(x = Feature, y = Coefficient)) +
+  geom_boxplot() +
+  expand_limits(y = c(0, 0.3)) +
+  theme_minimal() +
+  ylab("Absolute Feature Coefficient") +
+  xlab("Features") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+print(p1)
+
+```
+
+#### Using LASS0
+
+```{r fig.width = 15, fig.height = 10}
+Analyse_Modality_overview(which_modality = that_modality, which_classifier = "LASSO")
+df_features %>%
+  filter(DataSet == that_modality) %>%
+  filter(Classifier == "Response") %>%
+  filter(Method == "LASSO") %>%
+  filter(Combination == "Combination") %>%
+  select(Feature, Coefficient, DataSet, Run, Origin) %>%
+  filter(Coefficient != 0) %>%
+  mutate(absCoef = abs(Coefficient)) %>%
+  group_by(DataSet, Feature, Run) %>%
+  summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+  mutate(adjusted_mean = mean_features - sem_features) %>%
+  arrange(DataSet, desc(adjusted_mean)) %>%
+  mutate(rank_per_run = row_number(desc(adjusted_mean))) %>%
+  mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+  group_by(Bootstrap) %>%
+  summarise(contains_features = all(feature_panel_olink_facs %in% Feature)) %>%
+  summarise(count = sum(contains_features))
+
+
+lasso_run_olink_facs <- df_features %>%
+  filter(DataSet == that_modality) %>%
+  filter(Classifier == "Response") %>%
+  filter(Method == "LASSO") %>%
+  filter(Combination == "Combination") %>%
+  select(Feature, Coefficient, DataSet, Run, Origin) %>%
+  filter(Coefficient != 0) %>%
+  mutate(absCoef = abs(Coefficient)) %>%
+  group_by(DataSet, Feature, Run) %>%
+  summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+  mutate(adjusted_mean = mean_features - sem_features) %>%
+  arrange(DataSet, desc(adjusted_mean)) %>%
+  mutate(rank_per_run = row_number(desc(adjusted_mean))) %>%
+  mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+  filter(Bootstrap == refine_reference_run$`Reference Run`) %>%
+  select(DataSet, Feature) %>%
+  mutate(Method = "LASSO")
+
+intersect(unique(lasso_run_olink_facs$Feature), feature_panel_olink_facs)
+
+```
+
+#### Using ELASTICNET
+
+```{r fig.width = 15, fig.height = 10}
+Analyse_Modality_overview(which_modality = that_modality, which_classifier = "ELASTICNET")
+df_features %>%
+  filter(DataSet == that_modality) %>%
+  filter(Classifier == "Response") %>%
+  filter(Method == "ELASTICNET") %>%
+  filter(Combination == "Combination") %>%
+  select(Feature, Coefficient, DataSet, Run, Origin) %>%
+  filter(Coefficient != 0) %>%
+  mutate(absCoef = abs(Coefficient)) %>%
+  group_by(DataSet, Feature, Run) %>%
+  summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+  mutate(adjusted_mean = mean_features - sem_features) %>%
+  arrange(DataSet, desc(adjusted_mean)) %>%
+  mutate(rank_per_run = row_number(desc(adjusted_mean))) %>%
+  mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+  group_by(Bootstrap) %>%
+  summarise(contains_features = all(feature_panel_olink_facs %in% Feature)) %>%
+  summarise(count = sum(contains_features))
+
+
+el_run_olink_facs <- df_features %>%
+  filter(DataSet == that_modality) %>%
+  filter(Classifier == "Response") %>%
+  filter(Method == "ELASTICNET") %>%
+  filter(Combination == "Combination") %>%
+  select(Feature, Coefficient, DataSet, Run, Origin) %>%
+  filter(Coefficient != 0) %>%
+  mutate(absCoef = abs(Coefficient)) %>%
+  group_by(DataSet, Feature, Run) %>%
+  summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+  mutate(adjusted_mean = mean_features - sem_features) %>%
+  arrange(DataSet, desc(adjusted_mean)) %>%
+  mutate(rank_per_run = row_number(desc(adjusted_mean))) %>%
+  mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+  filter(Bootstrap == refine_reference_run$`Reference Run`) %>%
+  select(DataSet, Feature) %>%
+  mutate(Method = "ELASTICNET")
+
+intersect(unique(el_run_olink_facs$Feature), feature_panel_olink_facs)
+```
+
+
+```{r}
+summary_reg_olink_facs <- rbind(el_run_olink_facs, lasso_run_olink_facs) %>%
+  group_by(DataSet, Feature) %>%
+  summarise(
+    Methods = paste(unique(Method), collapse = ","),
+    .groups = 'drop'
+  ) %>%
+  mutate(Occurrence = case_when(
+    Methods == "ELASTICNET,LASSO" ~ "Both",
+    Methods == "ELASTICNET" ~ "ELASTICNET only",
+    Methods == "LASSO" ~ "LASSO only",
+    TRUE ~ "None"
+  ))
+```
+
+
+### OLINK_FACS_CyTOF
+
+```{r fig.width = 15, fig.height = 10}
+that_modality <- "OLINK_FACS_CyTOF"
+that_classifier <- "Logistic Regression"
+Analyse_Modality_overview(which_modality = that_modality, which_classifier = that_classifier)
+
+number_of_features <- df_features %>%
+  filter(DataSet == that_modality) %>%
+  filter(Classifier == "Response") %>%
+  filter(Method == "Logistic Regression") %>%
+  filter(Combination == "Combination") %>%
+  select(Feature, Coefficient, DataSet, Run, Origin) %>% #filter(Coefficient ! = 0 ) %>%
+  mutate(absCoef = abs(Coefficient)) %>%
+  group_by(DataSet, Feature, Run) %>%
+  summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+  mutate(adjusted_mean = mean_features - sem_features) %>%
+  arrange(DataSet, desc(adjusted_mean)) %>%
+  group_by(DataSet, Run) %>%
+  top_n(n = round(n() * 0.1), wt = adjusted_mean) %>%
+  filter(Run == 0) %>%
+  pull(Feature) %>%
+  length()
+auc_landscape <- data.frame("Number of features" = integer(), "Reference Run" = integer(), "AUC" = integer())
+
+for (run in 1:50) {
+  for (n_feat in 1:number_of_features) {
+    stability_landscape_iteration <- data.frame("Number of features" = integer(), "Threshold (top X%)" = integer(), "Reference Run" = integer(), "Included" = integer(), "Excluded" = integer())
+    for (cutoff in seq(0, 1.0, by = 0.1)) {
+      robust_features <- df_features %>%
+        filter(DataSet == that_modality) %>%
+        filter(Classifier == "Response") %>%
+        filter(Method == "Logistic Regression") %>%
+        filter(Combination == "Combination") %>%
+        select(Feature, Coefficient, DataSet, Run, Origin) %>% #filter(Coefficient ! = 0 ) %>%
+        mutate(absCoef = abs(Coefficient)) %>%
+        group_by(DataSet, Feature, Run) %>%
+        summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+        mutate(adjusted_mean = mean_features - sem_features) %>%
+        arrange(DataSet, desc(adjusted_mean)) %>%
+        group_by(DataSet, Run) %>%
+        top_n(n = round(n() * 0.1), wt = adjusted_mean) %>%
+        mutate(rank_per_run = row_number(desc(adjusted_mean))) %>%
+        mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+        group_by(Feature) %>%
+        #mutate(Feature2 = factor(Feature, levels = order_features)) %>%
+        filter(Bootstrap == run) %>%
+        filter(rank_per_run <= n_feat) %>%
+        pull(Feature)
+
+      stability_value <- df_features %>%
+        filter(DataSet == that_modality) %>%
+        filter(Classifier == "Response") %>%
+        filter(Method == "Logistic Regression") %>%
+        filter(Combination == "Combination") %>%
+        select(Feature, Coefficient, DataSet, Run, Origin) %>% #filter(Coefficient ! = 0 ) %>%
+        mutate(absCoef = abs(Coefficient)) %>%
+        group_by(DataSet, Feature, Run) %>%
+        summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+        mutate(adjusted_mean = mean_features - sem_features) %>%
+        arrange(DataSet, desc(adjusted_mean)) %>%
+        group_by(DataSet, Run) %>%
+        top_n(n = round(n() * cutoff), wt = adjusted_mean) %>%
+        mutate(rank_per_run = row_number(desc(adjusted_mean))) %>%
+        mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+        filter(Bootstrap != run) %>%
+        group_by(Bootstrap) %>%
+        summarise(contains_features = all(robust_features %in% Feature)) %>%
+        summarise(count = sum(contains_features)) %>%
+        mutate(Included = count / 49) %>%
+        mutate(Excluded = (49 - count) / 49)
+
+      stability_landscape_int <- data.frame("Number of features" = n_feat, "Threshold (top X%)" = cutoff, "Reference Run" = run, "Included" = stability_value$Included, "Excluded" = stability_value$Excluded)
+      stability_landscape_iteration <- rbind(stability_landscape_iteration, stability_landscape_int) }
+    auc_it <- sum(diff(stability_landscape_iteration$Threshold..top.X..) *
+                    (stability_landscape_iteration$Included[-1] + stability_landscape_iteration$Included[-length(stability_landscape_iteration$Included)]) / 2)
+    auc_landscape_it <- data.frame("Number of features" = n_feat, "Reference Run" = run, "AUC" = auc_it)
+    auc_landscape <- rbind(auc_landscape, auc_landscape_it)
+  }
+}
+
+save(auc_landscape, file = paste0('../StabilityRun_', that_modality, ".RData"))
+#
+
+p1 <- auc_landscape %>%
+  set_colnames(c("Number of features", "Reference Run", "AUC")) %>%
+  group_by(`Reference Run`) %>%
+  summarise(`Mean AUC` = mean(AUC)) %>%
+  ungroup() %>%
+  ggplot(aes(x = 1, y = `Reference Run`, fill = `Mean AUC`)) +
+  geom_tile() +
+  theme_minimal() +
+  geom_text(aes(label = round(`Mean AUC`, 2)), size = 3.5) +
+  theme(axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank()) +
+  scale_fill_gradient("AUC", low = "#fee5d9", high = "#a50f15", limits = c(0, 1)) +
+  scale_x_continuous(breaks = seq(1, 1, by = 1)) +
+  scale_y_continuous(breaks = seq(0, 100, by = 10)) +
+  ylab(paste("Iterations"))
+
+print(p1)
+ggsave(p1, file = paste0("../", project_name, "_StabilityAnalysis_", that_modality, "_Run.pdf"), width = 2, height = 10)
+
+refine_reference_run <- auc_landscape %>%
+  set_colnames(c("Number of features", "Reference Run", "AUC")) %>%
+  group_by(`Reference Run`) %>%
+  summarise(`Mean AUC` = mean(AUC)) %>%
+  filter(`Mean AUC` == max(`Mean AUC`)) %>%
+  slice(1)
+
+print(refine_reference_run)
+
+
+p2 <- auc_landscape %>%
+  set_colnames(c("Number of features", "Reference Run", "AUC")) %>%
+  filter(`Reference Run` == refine_reference_run$`Reference Run`) %>%
+  ggplot(aes(x = `Number of features`, y = AUC, fill = AUC)) +
+  geom_bar(stat = "identity") +
+  theme_minimal() +
+  #geom_text(aes(label = AUC), size = 2.5) +
+  geom_hline(yintercept = 0.7, linetype = "dashed", color = "red") +
+  scale_fill_gradient("AUC", low = "#fee5d9", high = "#a50f15", limits = c(0, 1)) +
+  scale_x_continuous(breaks = seq(1, number_of_features, by = 1)) +
+  scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, by = 0.25)) +
+  #scale_y_continuous(breaks = seq(10, 100, by = 10)) +
+  xlab(paste("Number of features")) +
+  labs(title = paste("Reference Run", refine_reference_run$`Reference Run`))
+ggsave(p2, file = paste0("~/Desktop/", project_name, "_StabilityAnalysis_", that_modality, "_RunRef.pdf"), width = 5, height = 2)
+
+how_many_features <- 5
+
+
+feature_panel_OLINK_FACS_CyTOF <- df_features %>%
+  filter(DataSet == that_modality) %>%
+  filter(Classifier == "Response") %>%
+  filter(Method == that_classifier) %>%
+  filter(Combination == "Combination") %>%
+  select(Feature, Coefficient, DataSet, Run, Origin) %>% #filter(Coefficient ! = 0 ) %>%
+  mutate(absCoef = abs(Coefficient)) %>%
+  group_by(DataSet, Feature, Run) %>%
+  summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+  mutate(adjusted_mean = mean_features - sem_features) %>%
+  arrange(DataSet, desc(adjusted_mean)) %>%
+  group_by(DataSet, Run) %>%
+  top_n(n = how_many_features, wt = adjusted_mean) %>%
+  mutate(rank_per_run = row_number(desc(adjusted_mean))) %>%
+  mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+  group_by(Feature) %>%
+  filter(Bootstrap == refine_reference_run$`Reference Run`) %>%
+  pull(Feature)
+
+feature_info_OLINK_FACS_CyTOF <- df_features %>%
+  filter(DataSet == that_modality) %>%
+  filter(Classifier == "Response") %>%
+  filter(Method == that_classifier) %>%
+  filter(Combination == "Combination") %>%
+  select(Feature, Coefficient, DataSet, Run, Origin) %>% #filter(Coefficient ! = 0 ) %>%
+  mutate(absCoef = abs(Coefficient)) %>%
+  mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+  filter(Bootstrap == refine_reference_run$`Reference Run`) %>%
+  filter(Feature %in% feature_panel_OLINK_FACS_CyTOF)
+
+print(feature_panel_OLINK_FACS_CyTOF)
+
+p1 <- df_features %>%
+  filter(DataSet == that_modality) %>%
+  filter(Classifier == "Response") %>%
+  filter(Method == that_classifier) %>%
+  filter(Combination == "Combination") %>%
+  select(Feature, Coefficient, DataSet, Run, Origin) %>% #filter(Coefficient ! = 0 ) %>%
+  mutate(absCoef = abs(Coefficient)) %>%
+  mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+  filter(Bootstrap == refine_reference_run$`Reference Run`) %>%
+  ungroup %>%
+  filter(Feature %in% feature_panel_OLINK_FACS_CyTOF) %>%
+  mutate(Feature = factor(Feature, levels = feature_panel_OLINK_FACS_CyTOF)) %>%
+  ggplot(aes(x = Feature, y = absCoef)) +
+  geom_boxplot() +
+  expand_limits(y = c(0, 0.3)) +
+  theme_minimal() +
+  ylab("Absolute Feature Coefficient") +
+  xlab("Features") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+print(p1)
+
+ggsave(p1, file = paste0("../", project_name, "_Bestfeatures_", that_modality, ".pdf"), width = 3, height = 2)
+
+p1 <- df_features %>%
+  filter(DataSet == that_modality) %>%
+  filter(Classifier == "Response") %>%
+  filter(Method == that_classifier) %>%
+  filter(Combination == "Combination") %>%
+  select(Feature, Coefficient, DataSet, Run, Origin) %>% #filter(Coefficient ! = 0 ) %>%
+
+  mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+  filter(Bootstrap == refine_reference_run$`Reference Run`) %>%
+  ungroup %>%
+  filter(Feature %in% feature_panel_OLINK_FACS_CyTOF) %>%
+  mutate(Feature = factor(Feature, levels = feature_panel_OLINK_FACS_CyTOF)) %>%
+  ggplot(aes(x = Feature, y = Coefficient)) +
+  geom_boxplot() +
+  expand_limits(y = c(0, 0.3)) +
+  theme_minimal() +
+  ylab("Absolute Feature Coefficient") +
+  xlab("Features") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+print(p1)
+
+
+```
+
+#### Using LASS0
+
+```{r fig.width = 15, fig.height = 10}
+Analyse_Modality_overview(which_modality = that_modality, which_classifier = "LASSO")
+df_features %>%
+  filter(DataSet == that_modality) %>%
+  filter(Classifier == "Response") %>%
+  filter(Method == "LASSO") %>%
+  filter(Combination == "Combination") %>%
+  select(Feature, Coefficient, DataSet, Run, Origin) %>%
+  filter(Coefficient != 0) %>%
+  mutate(absCoef = abs(Coefficient)) %>%
+  group_by(DataSet, Feature, Run) %>%
+  summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+  mutate(adjusted_mean = mean_features - sem_features) %>%
+  arrange(DataSet, desc(adjusted_mean)) %>%
+  mutate(rank_per_run = row_number(desc(adjusted_mean))) %>%
+  mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+  group_by(Bootstrap) %>%
+  summarise(contains_features = all(feature_panel_OLINK_FACS_CyTOF %in% Feature)) %>%
+  summarise(count = sum(contains_features))
+
+lasso_run_OLINK_FACS_CyTOF <- df_features %>%
+  filter(DataSet == that_modality) %>%
+  filter(Classifier == "Response") %>%
+  filter(Method == "LASSO") %>%
+  filter(Combination == "Combination") %>%
+  select(Feature, Coefficient, DataSet, Run, Origin) %>%
+  filter(Coefficient != 0) %>%
+  mutate(absCoef = abs(Coefficient)) %>%
+  group_by(DataSet, Feature, Run) %>%
+  summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+  mutate(adjusted_mean = mean_features - sem_features) %>%
+  arrange(DataSet, desc(adjusted_mean)) %>%
+  mutate(rank_per_run = row_number(desc(adjusted_mean))) %>%
+  mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+  filter(Bootstrap == refine_reference_run$`Reference Run`) %>%
+  select(DataSet, Feature) %>%
+  mutate(Method = "LASSO")
+
+intersect(unique(lasso_run_OLINK_FACS_CyTOF$Feature), feature_panel_OLINK_FACS_CyTOF)
+```
+
+#### Using ELASTICNET
+
+```{r fig.width = 15, fig.height = 10}
+Analyse_Modality_overview(which_modality = that_modality, which_classifier = "ELASTICNET")
+df_features %>%
+  filter(DataSet == that_modality) %>%
+  filter(Classifier == "Response") %>%
+  filter(Method == "ELASTICNET") %>%
+  filter(Combination == "Combination") %>%
+  select(Feature, Coefficient, DataSet, Run, Origin) %>%
+  filter(Coefficient != 0) %>%
+  mutate(absCoef = abs(Coefficient)) %>%
+  group_by(DataSet, Feature, Run) %>%
+  summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+  mutate(adjusted_mean = mean_features - sem_features) %>%
+  arrange(DataSet, desc(adjusted_mean)) %>%
+  mutate(rank_per_run = row_number(desc(adjusted_mean))) %>%
+  mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+  group_by(Bootstrap) %>%
+  summarise(contains_features = all(feature_panel_OLINK_FACS_CyTOF %in% Feature)) %>%
+  summarise(count = sum(contains_features))
+
+
+el_run_OLINK_FACS_CyTOF <- df_features %>%
+  filter(DataSet == that_modality) %>%
+  filter(Classifier == "Response") %>%
+  filter(Method == "ELASTICNET") %>%
+  filter(Combination == "Combination") %>%
+  select(Feature, Coefficient, DataSet, Run, Origin) %>%
+  filter(Coefficient != 0) %>%
+  mutate(absCoef = abs(Coefficient)) %>%
+  group_by(DataSet, Feature, Run) %>%
+  summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+  mutate(adjusted_mean = mean_features - sem_features) %>%
+  arrange(DataSet, desc(adjusted_mean)) %>%
+  mutate(rank_per_run = row_number(desc(adjusted_mean))) %>%
+  mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+  filter(Bootstrap == refine_reference_run$`Reference Run`) %>%
+  select(DataSet, Feature) %>%
+  mutate(Method = "ELASTICNET")
+
+intersect(unique(el_run_OLINK_FACS_CyTOF$Feature), feature_panel_OLINK_FACS_CyTOF)
+```
+```{r}
+summary_reg_OLINK_FACS_CyTOF <- rbind(el_run_OLINK_FACS_CyTOF, lasso_run_OLINK_FACS_CyTOF) %>%
+  group_by(DataSet, Feature) %>%
+  summarise(
+    Methods = paste(unique(Method), collapse = ","),
+    .groups = 'drop'
+  ) %>%
+  mutate(Occurrence = case_when(
+    Methods == "ELASTICNET,LASSO" ~ "Both",
+    Methods == "ELASTICNET" ~ "ELASTICNET only",
+    Methods == "LASSO" ~ "LASSO only",
+    TRUE ~ "None"
+  ))
+```
+
+### FACS_CyTOF_Clinical
+
+```{r fig.width = 15, fig.height = 10}
+that_modality <- "FACS_CyTOF_Clinical"
+that_classifier <- "Logistic Regression"
+Analyse_Modality_overview(which_modality = that_modality, which_classifier = that_classifier)
+number_of_features <- df_features %>%
+  filter(DataSet == that_modality) %>%
+  filter(Classifier == "Response") %>%
+  filter(Method == "Logistic Regression") %>%
+  filter(Combination == "Combination") %>%
+  select(Feature, Coefficient, DataSet, Run, Origin) %>% #filter(Coefficient ! = 0 ) %>%
+  mutate(absCoef = abs(Coefficient)) %>%
+  group_by(DataSet, Feature, Run) %>%
+  summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+  mutate(adjusted_mean = mean_features - sem_features) %>%
+  arrange(DataSet, desc(adjusted_mean)) %>%
+  group_by(DataSet, Run) %>%
+  top_n(n = round(n() * 0.1), wt = adjusted_mean) %>%
+  filter(Run == 0) %>%
+  pull(Feature) %>%
+  length()
+auc_landscape <- data.frame("Number of features" = integer(), "Reference Run" = integer(), "AUC" = integer())
+
+for (run in 1:50) {
+  for (n_feat in 1:number_of_features) {
+    stability_landscape_iteration <- data.frame("Number of features" = integer(), "Threshold (top X%)" = integer(), "Reference Run" = integer(), "Included" = integer(), "Excluded" = integer())
+    for (cutoff in seq(0, 1.0, by = 0.1)) {
+      robust_features <- df_features %>%
+        filter(DataSet == that_modality) %>%
+        filter(Classifier == "Response") %>%
+        filter(Method == "Logistic Regression") %>%
+        filter(Combination == "Combination") %>%
+        select(Feature, Coefficient, DataSet, Run, Origin) %>% #filter(Coefficient ! = 0 ) %>%
+        mutate(absCoef = abs(Coefficient)) %>%
+        group_by(DataSet, Feature, Run) %>%
+        summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+        mutate(adjusted_mean = mean_features - sem_features) %>%
+        arrange(DataSet, desc(adjusted_mean)) %>%
+        group_by(DataSet, Run) %>%
+        top_n(n = round(n() * 0.1), wt = adjusted_mean) %>%
+        mutate(rank_per_run = row_number(desc(adjusted_mean))) %>%
+        mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+        group_by(Feature) %>%
+        #mutate(Feature2 = factor(Feature, levels = order_features)) %>%
+        filter(Bootstrap == run) %>%
+        filter(rank_per_run <= n_feat) %>%
+        pull(Feature)
+
+      stability_value <- df_features %>%
+        filter(DataSet == that_modality) %>%
+        filter(Classifier == "Response") %>%
+        filter(Method == "Logistic Regression") %>%
+        filter(Combination == "Combination") %>%
+        select(Feature, Coefficient, DataSet, Run, Origin) %>% #filter(Coefficient ! = 0 ) %>%
+        mutate(absCoef = abs(Coefficient)) %>%
+        group_by(DataSet, Feature, Run) %>%
+        summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+        mutate(adjusted_mean = mean_features - sem_features) %>%
+        arrange(DataSet, desc(adjusted_mean)) %>%
+        group_by(DataSet, Run) %>%
+        top_n(n = round(n() * cutoff), wt = adjusted_mean) %>%
+        mutate(rank_per_run = row_number(desc(adjusted_mean))) %>%
+        mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+        filter(Bootstrap != run) %>%
+        group_by(Bootstrap) %>%
+        summarise(contains_features = all(robust_features %in% Feature)) %>%
+        summarise(count = sum(contains_features)) %>%
+        mutate(Included = count / 49) %>%
+        mutate(Excluded = (49 - count) / 49)
+
+      stability_landscape_int <- data.frame("Number of features" = n_feat, "Threshold (top X%)" = cutoff, "Reference Run" = run, "Included" = stability_value$Included, "Excluded" = stability_value$Excluded)
+      stability_landscape_iteration <- rbind(stability_landscape_iteration, stability_landscape_int) }
+    auc_it <- sum(diff(stability_landscape_iteration$Threshold..top.X..) *
+                    (stability_landscape_iteration$Included[-1] + stability_landscape_iteration$Included[-length(stability_landscape_iteration$Included)]) / 2)
+    auc_landscape_it <- data.frame("Number of features" = n_feat, "Reference Run" = run, "AUC" = auc_it)
+    auc_landscape <- rbind(auc_landscape, auc_landscape_it)
+  }
+}
+
+save(auc_landscape, file = paste0('../StabilityRun_', that_modality, ".RData"))
+
+p1 <- auc_landscape %>%
+  set_colnames(c("Number of features", "Reference Run", "AUC")) %>%
+  group_by(`Reference Run`) %>%
+  summarise(`Mean AUC` = mean(AUC)) %>%
+  ungroup() %>%
+  ggplot(aes(x = 1, y = `Reference Run`, fill = `Mean AUC`)) +
+  geom_tile() +
+  theme_minimal() +
+  geom_text(aes(label = round(`Mean AUC`, 2)), size = 3.5) +
+  theme(axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank()) +
+  scale_fill_gradient("AUC", low = "#fee5d9", high = "#a50f15", limits = c(0, 1)) +
+  scale_x_continuous(breaks = seq(1, 1, by = 1)) +
+  scale_y_continuous(breaks = seq(0, 100, by = 10)) +
+  ylab(paste("Iterations"))
+
+print(p1)
+ggsave(p1, file = paste0("../", project_name, "_StabilityAnalysis_", that_modality, "_Run.pdf"), width = 2, height = 10)
+
+refine_reference_run <- auc_landscape %>%
+  set_colnames(c("Number of features", "Reference Run", "AUC")) %>%
+  group_by(`Reference Run`) %>%
+  summarise(`Mean AUC` = mean(AUC)) %>%
+  filter(`Mean AUC` == max(`Mean AUC`)) %>%
+  slice(1)
+
+print(refine_reference_run)
+
+
+p2 <- auc_landscape %>%
+  set_colnames(c("Number of features", "Reference Run", "AUC")) %>%
+  filter(`Reference Run` == refine_reference_run$`Reference Run`) %>%
+  ggplot(aes(x = `Number of features`, y = AUC, fill = AUC)) +
+  geom_bar(stat = "identity") +
+  theme_minimal() +
+  geom_hline(yintercept = 0.7, linetype = "dashed", color = "red") +
+  scale_fill_gradient("AUC", low = "#fee5d9", high = "#a50f15", limits = c(0, 1)) +
+  scale_x_continuous(breaks = seq(1, number_of_features, by = 1)) +
+  scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, by = 0.25)) +
+  xlab(paste("Number of features")) +
+  labs(title = paste("Reference Run", refine_reference_run$`Reference Run`))
+ggsave(p2, file = paste0("../", project_name, "_StabilityAnalysis_", that_modality, "_RunRef.pdf"), width = 5, height = 2)
+
+how_many_features <- 5
+
+feature_panel_FACS_CyTOF_Clinical <- df_features %>%
+  filter(DataSet == that_modality) %>%
+  filter(Classifier == "Response") %>%
+  filter(Method == that_classifier) %>%
+  filter(Combination == "Combination") %>%
+  select(Feature, Coefficient, DataSet, Run, Origin) %>% #filter(Coefficient ! = 0 ) %>%
+  mutate(absCoef = abs(Coefficient)) %>%
+  group_by(DataSet, Feature, Run) %>%
+  summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+  mutate(adjusted_mean = mean_features - sem_features) %>%
+  arrange(DataSet, desc(adjusted_mean)) %>%
+  group_by(DataSet, Run) %>%
+  top_n(n = how_many_features, wt = adjusted_mean) %>%
+  mutate(rank_per_run = row_number(desc(adjusted_mean))) %>%
+  mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+  group_by(Feature) %>%
+  filter(Bootstrap == refine_reference_run$`Reference Run`) %>%
+  pull(Feature)
+
+print(feature_panel_FACS_CyTOF_Clinical)
+
+feature_info_FACS_CyTOF_Clinical <- df_features %>%
+  filter(DataSet == that_modality) %>%
+  filter(Classifier == "Response") %>%
+  filter(Method == that_classifier) %>%
+  filter(Combination == "Combination") %>%
+  select(Feature, Coefficient, DataSet, Run, Origin) %>% #filter(Coefficient ! = 0 ) %>%
+  mutate(absCoef = abs(Coefficient)) %>%
+  mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+  filter(Bootstrap == refine_reference_run$`Reference Run`) %>%
+  filter(Feature %in% feature_panel_FACS_CyTOF_Clinical)
+
+
+
+p1 <- df_features %>%
+  filter(DataSet == that_modality) %>%
+  filter(Classifier == "Response") %>%
+  filter(Method == that_classifier) %>%
+  filter(Combination == "Combination") %>%
+  select(Feature, Coefficient, DataSet, Run, Origin) %>% #filter(Coefficient ! = 0 ) %>%
+  mutate(absCoef = abs(Coefficient)) %>%
+  mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+  filter(Bootstrap == refine_reference_run$`Reference Run`) %>%
+  ungroup %>%
+  filter(Feature %in% feature_info_FACS_CyTOF_Clinical) %>%
+  mutate(Feature = factor(Feature, levels = feature_panel_FACS_CyTOF_Clinical)) %>%
+  ggplot(aes(x = Feature, y = absCoef)) +
+  geom_boxplot() +
+  expand_limits(y = c(0, 0.3)) +
+  theme_minimal() +
+  ylab("Absolute Feature Coefficient") +
+  xlab("Features") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+print(p1)
+
+ggsave(p1, file = paste0("../", project_name, "_Bestfeatures_", that_modality, ".pdf"), width = 3, height = 2)
+
+p1 <- df_features %>%
+  filter(DataSet == that_modality) %>%
+  filter(Classifier == "Response") %>%
+  filter(Method == that_classifier) %>%
+  filter(Combination == "Combination") %>%
+  select(Feature, Coefficient, DataSet, Run, Origin) %>% #filter(Coefficient ! = 0 ) %>%
+  #mutate(absCoef = abs(Coefficient)) %>%
+  mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+  filter(Bootstrap == refine_reference_run$`Reference Run`) %>%
+  ungroup %>%
+  filter(Feature %in% feature_panel_FACS_CyTOF_Clinical) %>%
+  mutate(Feature = factor(Feature, levels = feature_panel_FACS_CyTOF_Clinical)) %>%
+  ggplot(aes(x = Feature, y = Coefficient)) +
+  geom_boxplot() +
+  expand_limits(y = c(0, 0.3)) +
+  theme_minimal() +
+  ylab("Absolute Feature Coefficient") +
+  xlab("Features") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+print(p1)
+
+
+```
+
+#### Using LASS0
+
+```{r fig.width = 15, fig.height = 10}
+Analyse_Modality_overview(which_modality = that_modality, which_classifier = "LASSO")
+df_features %>%
+  filter(DataSet == that_modality) %>%
+  filter(Classifier == "Response") %>%
+  filter(Method == "LASSO") %>%
+  filter(Combination == "Combination") %>%
+  select(Feature, Coefficient, DataSet, Run, Origin) %>%
+  filter(Coefficient != 0) %>%
+  mutate(absCoef = abs(Coefficient)) %>%
+  group_by(DataSet, Feature, Run) %>%
+  summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+  mutate(adjusted_mean = mean_features - sem_features) %>%
+  arrange(DataSet, desc(adjusted_mean)) %>%
+  mutate(rank_per_run = row_number(desc(adjusted_mean))) %>%
+  mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+  group_by(Bootstrap) %>%
+  summarise(contains_features = all(feature_panel_FACS_CyTOF_Clinical %in% Feature)) %>%
+  summarise(count = sum(contains_features))
+
+
+lasso_run_FACS_CyTOF_Clinical <- df_features %>%
+  filter(DataSet == that_modality) %>%
+  filter(Classifier == "Response") %>%
+  filter(Method == "LASSO") %>%
+  filter(Combination == "Combination") %>%
+  select(Feature, Coefficient, DataSet, Run, Origin) %>%
+  filter(Coefficient != 0) %>%
+  mutate(absCoef = abs(Coefficient)) %>%
+  group_by(DataSet, Feature, Run) %>%
+  summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+  mutate(adjusted_mean = mean_features - sem_features) %>%
+  arrange(DataSet, desc(adjusted_mean)) %>%
+  mutate(rank_per_run = row_number(desc(adjusted_mean))) %>%
+  mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+  filter(Bootstrap == refine_reference_run$`Reference Run`) %>%
+  select(DataSet, Feature) %>%
+  mutate(Method = "LASSO")
+
+intersect(unique(lasso_run_FACS_CyTOF_Clinical$Feature), feature_panel_FACS_CyTOF_Clinical)
+```
+
+#### Using ELASTICNET
+
+```{r fig.width = 15, fig.height = 10}
+Analyse_Modality_overview(which_modality = that_modality, which_classifier = "ELASTICNET")
+df_features %>%
+  filter(DataSet == that_modality) %>%
+  filter(Classifier == "Response") %>%
+  filter(Method == "ELASTICNET") %>%
+  filter(Combination == "Combination") %>%
+  select(Feature, Coefficient, DataSet, Run, Origin) %>%
+  filter(Coefficient != 0) %>%
+  mutate(absCoef = abs(Coefficient)) %>%
+  group_by(DataSet, Feature, Run) %>%
+  summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+  mutate(adjusted_mean = mean_features - sem_features) %>%
+  arrange(DataSet, desc(adjusted_mean)) %>%
+  mutate(rank_per_run = row_number(desc(adjusted_mean))) %>%
+  mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+  group_by(Bootstrap) %>%
+  summarise(contains_features = all(feature_panel_FACS_CyTOF_Clinical %in% Feature)) %>%
+  summarise(count = sum(contains_features))
+
+el_run_FACS_CyTOF_Clinical <- df_features %>%
+  filter(DataSet == that_modality) %>%
+  filter(Classifier == "Response") %>%
+  filter(Method == "ELASTICNET") %>%
+  filter(Combination == "Combination") %>%
+  select(Feature, Coefficient, DataSet, Run, Origin) %>%
+  filter(Coefficient != 0) %>%
+  mutate(absCoef = abs(Coefficient)) %>%
+  group_by(DataSet, Feature, Run) %>%
+  summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+  mutate(adjusted_mean = mean_features - sem_features) %>%
+  arrange(DataSet, desc(adjusted_mean)) %>%
+  mutate(rank_per_run = row_number(desc(adjusted_mean))) %>%
+  mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+  filter(Bootstrap == refine_reference_run$`Reference Run`) %>%
+  select(DataSet, Feature) %>%
+  mutate(Method = "ELASTICNET")
+
+intersect(unique(el_run_FACS_CyTOF_Clinical$Feature), feature_panel_FACS_CyTOF_Clinical)
+```
+
+```{r}
+summary_reg_FACS_CyTOF_Clinical <- rbind(el_run_FACS_CyTOF_Clinical, lasso_run_FACS_CyTOF_Clinical) %>%
+  group_by(DataSet, Feature) %>%
+  summarise(
+    Methods = paste(unique(Method), collapse = ","),
+    .groups = 'drop'
+  ) %>%
+  mutate(Occurrence = case_when(
+    Methods == "ELASTICNET,LASSO" ~ "Both",
+    Methods == "ELASTICNET" ~ "ELASTICNET only",
+    Methods == "LASSO" ~ "LASSO only",
+    TRUE ~ "None"
+  ))
+```
+
+### FACS_CyTOFab
+
+```{r fig.width = 15, fig.height = 10}
+that_modality <- "FACS_CyTOFa4b7"
+that_classifier <- "Logistic Regression"
+Analyse_Modality_overview(which_modality = that_modality, which_classifier = that_classifier)
+number_of_features <- df_features %>%
+  filter(DataSet == that_modality) %>%
+  filter(Classifier == "Response") %>%
+  filter(Method == "Logistic Regression") %>%
+  filter(Combination == "Combination") %>%
+  select(Feature, Coefficient, DataSet, Run, Origin) %>% #filter(Coefficient ! = 0 ) %>%
+  mutate(absCoef = abs(Coefficient)) %>%
+  group_by(DataSet, Feature, Run) %>%
+  summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+  mutate(adjusted_mean = mean_features - sem_features) %>%
+  arrange(DataSet, desc(adjusted_mean)) %>%
+  group_by(DataSet, Run) %>%
+  top_n(n = round(n() * 0.1), wt = adjusted_mean) %>%
+  filter(Run == 0) %>%
+  pull(Feature) %>%
+  length()
+auc_landscape <- data.frame("Number of features" = integer(), "Reference Run" = integer(), "AUC" = integer())
+
+for (run in 1:50) {
+  for (n_feat in 1:number_of_features) {
+    stability_landscape_iteration <- data.frame("Number of features" = integer(), "Threshold (top X%)" = integer(), "Reference Run" = integer(), "Included" = integer(), "Excluded" = integer())
+    for (cutoff in seq(0, 1.0, by = 0.1)) {
+      robust_features <- df_features %>%
+        filter(DataSet == that_modality) %>%
+        filter(Classifier == "Response") %>%
+        filter(Method == "Logistic Regression") %>%
+        filter(Combination == "Combination") %>%
+        select(Feature, Coefficient, DataSet, Run, Origin) %>% #filter(Coefficient ! = 0 ) %>%
+        mutate(absCoef = abs(Coefficient)) %>%
+        group_by(DataSet, Feature, Run) %>%
+        summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+        mutate(adjusted_mean = mean_features - sem_features) %>%
+        arrange(DataSet, desc(adjusted_mean)) %>%
+        group_by(DataSet, Run) %>%
+        top_n(n = round(n() * 0.1), wt = adjusted_mean) %>%
+        mutate(rank_per_run = row_number(desc(adjusted_mean))) %>%
+        mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+        group_by(Feature) %>%
+        filter(Bootstrap == run) %>%
+        filter(rank_per_run <= n_feat) %>%
+        pull(Feature)
+
+      stability_value <- df_features %>%
+        filter(DataSet == that_modality) %>%
+        filter(Classifier == "Response") %>%
+        filter(Method == "Logistic Regression") %>%
+        filter(Combination == "Combination") %>%
+        select(Feature, Coefficient, DataSet, Run, Origin) %>% #filter(Coefficient ! = 0 ) %>%
+        mutate(absCoef = abs(Coefficient)) %>%
+        group_by(DataSet, Feature, Run) %>%
+        summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+        mutate(adjusted_mean = mean_features - sem_features) %>%
+        arrange(DataSet, desc(adjusted_mean)) %>%
+        group_by(DataSet, Run) %>%
+        top_n(n = round(n() * cutoff), wt = adjusted_mean) %>%
+        mutate(rank_per_run = row_number(desc(adjusted_mean))) %>%
+        mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+        filter(Bootstrap != run) %>%
+        group_by(Bootstrap) %>%
+        summarise(contains_features = all(robust_features %in% Feature)) %>%
+        summarise(count = sum(contains_features)) %>%
+        mutate(Included = count / 49) %>%
+        mutate(Excluded = (49 - count) / 49)
+
+      stability_landscape_int <- data.frame("Number of features" = n_feat, "Threshold (top X%)" = cutoff, "Reference Run" = run, "Included" = stability_value$Included, "Excluded" = stability_value$Excluded)
+      stability_landscape_iteration <- rbind(stability_landscape_iteration, stability_landscape_int) }
+    auc_it <- sum(diff(stability_landscape_iteration$Threshold..top.X..) *
+                    (stability_landscape_iteration$Included[-1] + stability_landscape_iteration$Included[-length(stability_landscape_iteration$Included)]) / 2)
+    auc_landscape_it <- data.frame("Number of features" = n_feat, "Reference Run" = run, "AUC" = auc_it)
+    auc_landscape <- rbind(auc_landscape, auc_landscape_it)
+  }
+}
+
+save(auc_landscape, file = paste0('../StabilityRun_', that_modality, ".RData"))
+
+p1 <- auc_landscape %>%
+  set_colnames(c("Number of features", "Reference Run", "AUC")) %>%
+  group_by(`Reference Run`) %>%
+  summarise(`Mean AUC` = mean(AUC)) %>%
+  ungroup() %>%
+  ggplot(aes(x = 1, y = `Reference Run`, fill = `Mean AUC`)) +
+  geom_tile() +
+  theme_minimal() +
+  geom_text(aes(label = round(`Mean AUC`, 2)), size = 3.5) +
+  theme(axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank()) +
+  scale_fill_gradient("AUC", low = "#fee5d9", high = "#a50f15", limits = c(0, 1)) +
+  scale_x_continuous(breaks = seq(1, 1, by = 1)) +
+  scale_y_continuous(breaks = seq(0, 100, by = 10)) +
+  ylab(paste("Iterations"))
+
+print(p1)
+ggsave(p1, file = paste0("../", project_name, "_StabilityAnalysis_", that_modality, "_Run.pdf"), width = 2, height = 10)
+
+refine_reference_run <- auc_landscape %>%
+  set_colnames(c("Number of features", "Reference Run", "AUC")) %>%
+  group_by(`Reference Run`) %>%
+  summarise(`Mean AUC` = mean(AUC)) %>%
+  filter(`Mean AUC` == max(`Mean AUC`)) %>%
+  slice(1)
+
+print(refine_reference_run)
+
+
+p2 <- auc_landscape %>%
+  set_colnames(c("Number of features", "Reference Run", "AUC")) %>%
+  filter(`Reference Run` == refine_reference_run$`Reference Run`) %>%
+  ggplot(aes(x = `Number of features`, y = AUC, fill = AUC)) +
+  geom_bar(stat = "identity") +
+  theme_minimal() +
+  geom_hline(yintercept = 0.7, linetype = "dashed", color = "red") +
+  scale_fill_gradient("AUC", low = "#fee5d9", high = "#a50f15", limits = c(0, 1)) +
+  scale_x_continuous(breaks = seq(1, number_of_features, by = 1)) +
+  scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, by = 0.25)) +
+  xlab(paste("Number of features")) +
+  labs(title = paste("Reference Run", refine_reference_run$`Reference Run`))
+ggsave(p2, file = paste0("../", project_name, "_StabilityAnalysis_", that_modality, "_RunRef.pdf"), width = 5, height = 2)
+
+how_many_features <- 5
+
+feature_panel_FACS_CyTOFab <- df_features %>%
+  filter(DataSet == that_modality) %>%
+  filter(Classifier == "Response") %>%
+  filter(Method == that_classifier) %>%
+  filter(Combination == "Combination") %>%
+  select(Feature, Coefficient, DataSet, Run, Origin) %>% #filter(Coefficient ! = 0 ) %>%
+  mutate(absCoef = abs(Coefficient)) %>%
+  group_by(DataSet, Feature, Run) %>%
+  summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+  mutate(adjusted_mean = mean_features - sem_features) %>%
+  arrange(DataSet, desc(adjusted_mean)) %>%
+  group_by(DataSet, Run) %>%
+  top_n(n = how_many_features, wt = adjusted_mean) %>%
+  mutate(rank_per_run = row_number(desc(adjusted_mean))) %>%
+  mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+  group_by(Feature) %>%
+  filter(Bootstrap == refine_reference_run$`Reference Run`) %>%
+  pull(Feature)
+
+print(feature_panel_FACS_CyTOFab)
+
+feature_info_FACS_CyTOFab <- df_features %>%
+  filter(DataSet == that_modality) %>%
+  filter(Classifier == "Response") %>%
+  filter(Method == that_classifier) %>%
+  filter(Combination == "Combination") %>%
+  select(Feature, Coefficient, DataSet, Run, Origin) %>% #filter(Coefficient ! = 0 ) %>%
+  mutate(absCoef = abs(Coefficient)) %>%
+  mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+  filter(Bootstrap == refine_reference_run$`Reference Run`) %>%
+  filter(Feature %in% feature_panel_FACS_CyTOFab)
+
+p1 <- df_features %>%
+  filter(DataSet == that_modality) %>%
+  filter(Classifier == "Response") %>%
+  filter(Method == that_classifier) %>%
+  filter(Combination == "Combination") %>%
+  select(Feature, Coefficient, DataSet, Run, Origin) %>% #filter(Coefficient ! = 0 ) %>%
+  mutate(absCoef = abs(Coefficient)) %>%
+  mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+  filter(Bootstrap == refine_reference_run$`Reference Run`) %>%
+  ungroup %>%
+  filter(Feature %in% feature_info_FACS_CyTOFab) %>%
+  mutate(Feature = factor(Feature, levels = feature_panel_FACS_CyTOFab)) %>%
+  ggplot(aes(x = Feature, y = absCoef)) +
+  geom_boxplot() +
+  expand_limits(y = c(0, 0.3)) +
+  theme_minimal() +
+  ylab("Absolute Feature Coefficient") +
+  xlab("Features") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+print(p1)
+
+ggsave(p1, file = paste0("~/Desktop/", project_name, "_Bestfeatures_", that_modality, ".pdf"), width = 3, height = 2)
+
+p1 <- df_features %>%
+  filter(DataSet == that_modality) %>%
+  filter(Classifier == "Response") %>%
+  filter(Method == that_classifier) %>%
+  filter(Combination == "Combination") %>%
+  select(Feature, Coefficient, DataSet, Run, Origin) %>% #filter(Coefficient ! = 0 ) %>%
+  #mutate(absCoef = abs(Coefficient)) %>%
+  mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+  filter(Bootstrap == refine_reference_run$`Reference Run`) %>%
+  ungroup %>%
+  filter(Feature %in% feature_panel_FACS_CyTOFab) %>%
+  mutate(Feature = factor(Feature, levels = feature_panel_FACS_CyTOFab)) %>%
+  ggplot(aes(x = Feature, y = Coefficient)) +
+  geom_boxplot() +
+  expand_limits(y = c(0, 0.3)) +
+  theme_minimal() +
+  ylab("Absolute Feature Coefficient") +
+  xlab("Features") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+print(p1)
+
+
+```
+
+#### Using LASS0
+
+```{r fig.width = 15, fig.height = 10}
+Analyse_Modality_overview(which_modality = that_modality, which_classifier = "LASSO")
+df_features %>%
+  filter(DataSet == that_modality) %>%
+  filter(Classifier == "Response") %>%
+  filter(Method == "LASSO") %>%
+  filter(Combination == "Combination") %>%
+  select(Feature, Coefficient, DataSet, Run, Origin) %>%
+  filter(Coefficient != 0) %>%
+  mutate(absCoef = abs(Coefficient)) %>%
+  group_by(DataSet, Feature, Run) %>%
+  summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+  mutate(adjusted_mean = mean_features - sem_features) %>%
+  arrange(DataSet, desc(adjusted_mean)) %>%
+  mutate(rank_per_run = row_number(desc(adjusted_mean))) %>%
+  mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+  group_by(Bootstrap) %>%
+  summarise(contains_features = all(feature_panel_FACS_CyTOFab %in% Feature)) %>%
+  summarise(count = sum(contains_features))
+
+lasso_run_FACS_CyTOFab <- df_features %>%
+  filter(DataSet == that_modality) %>%
+  filter(Classifier == "Response") %>%
+  filter(Method == "LASSO") %>%
+  filter(Combination == "Combination") %>%
+  select(Feature, Coefficient, DataSet, Run, Origin) %>%
+  filter(Coefficient != 0) %>%
+  mutate(absCoef = abs(Coefficient)) %>%
+  group_by(DataSet, Feature, Run) %>%
+  summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+  mutate(adjusted_mean = mean_features - sem_features) %>%
+  arrange(DataSet, desc(adjusted_mean)) %>%
+  mutate(rank_per_run = row_number(desc(adjusted_mean))) %>%
+  mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+  filter(Bootstrap == refine_reference_run$`Reference Run`) %>%
+  select(DataSet, Feature) %>%
+  mutate(Method = "LASSO")
+
+
+intersect(unique(lasso_run_FACS_CyTOFab$Feature), feature_panel_FACS_CyTOFab)
+```
+
+#### Using ELASTICNET
+
+```{r fig.width = 15, fig.height = 10}
+Analyse_Modality_overview(which_modality = that_modality, which_classifier = "ELASTICNET")
+df_features %>%
+  filter(DataSet == that_modality) %>%
+  filter(Classifier == "Response") %>%
+  filter(Method == "ELASTICNET") %>%
+  filter(Combination == "Combination") %>%
+  select(Feature, Coefficient, DataSet, Run, Origin) %>%
+  filter(Coefficient != 0) %>%
+  mutate(absCoef = abs(Coefficient)) %>%
+  group_by(DataSet, Feature, Run) %>%
+  summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+  mutate(adjusted_mean = mean_features - sem_features) %>%
+  arrange(DataSet, desc(adjusted_mean)) %>%
+  mutate(rank_per_run = row_number(desc(adjusted_mean))) %>%
+  mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+  group_by(Bootstrap) %>%
+  summarise(contains_features = all(feature_panel_FACS_CyTOFab %in% Feature)) %>%
+  summarise(count = sum(contains_features))
+
+el_run_FACS_CyTOFab <- df_features %>%
+  filter(DataSet == that_modality) %>%
+  filter(Classifier == "Response") %>%
+  filter(Method == "ELASTICNET") %>%
+  filter(Combination == "Combination") %>%
+  select(Feature, Coefficient, DataSet, Run, Origin) %>%
+  filter(Coefficient != 0) %>%
+  mutate(absCoef = abs(Coefficient)) %>%
+  group_by(DataSet, Feature, Run) %>%
+  summarise(mean_features = mean(absCoef), sem_features = sd(absCoef) / sqrt(length(absCoef))) %>%
+  mutate(adjusted_mean = mean_features - sem_features) %>%
+  arrange(DataSet, desc(adjusted_mean)) %>%
+  mutate(rank_per_run = row_number(desc(adjusted_mean))) %>%
+  mutate(Bootstrap = factor(as.numeric(Run) + 1, levels = c(1:50))) %>%
+  filter(Bootstrap == refine_reference_run$`Reference Run`) %>%
+  select(DataSet, Feature) %>%
+  mutate(Method = "ELASTICNET")
+
+intersect(unique(el_run_FACS_CyTOFab$Feature), feature_panel_FACS_CyTOFab)
+
+summary_reg_FACS_CyTOFab <- rbind(el_run_FACS_CyTOFab, lasso_run_FACS_CyTOFab) %>%
+  group_by(DataSet, Feature) %>%
+  summarise(
+    Methods = paste(unique(Method), collapse = ","),
+    .groups = 'drop'
+  ) %>%
+  mutate(Occurrence = case_when(
+    Methods == "ELASTICNET,LASSO" ~ "Both",
+    Methods == "ELASTICNET" ~ "ELASTICNET only",
+    Methods == "LASSO" ~ "LASSO only",
+    TRUE ~ "None"
+  ))
+
+```
+
+
+```{r}
+order_of_features <- c("Ki67", "CXCR3", "IL4", "GPR15", "CD103", "IFNg","B7", "CXCL6", "TNF", "NK cells")
+
+combined_regularizers <- rbind(summary_reg_olink_facs, summary_reg_FACS_CyTOF_Clinical,  summary_reg_OLINK_FACS_CyTOF) %>%
+  mutate(Feature = gsub(pattern = "_FACS|_A4B7", replacement = "", Feature)) %>%
+  mutate(Feature = gsub(pattern = "[.]", replacement = " ", Feature)) %>%
+  mutate(Feature = gsub(Feature, pattern = "CD4mem_", replacement = "")) #%>%
+
+
+p1 <- combined_regularizers %>%
+  mutate(DataSet = factor(gsub(pattern = "_", replacement = "+", DataSet))) %>%
+  mutate(DataSet = factor(gsub(pattern = "_", replacement = "\n", DataSet), levels = c("OLINK+FACS", "OLINK+FACS+CyTOF", "FACS+CyTOF+Clinical"))) %>%
+  droplevels() %>%
+  mutate(Feature = factor(Feature, levels = order_of_features)) %>%
+  ggplot(aes(x = Feature, y = DataSet, fill = Occurrence)) +
+  geom_tile(color = "white") +
+  scale_fill_manual(values = c("None" = "red", "LASSO only" = "#d9d9d9", "ELASTICNET only" = "#969696", "Both" = "#252525")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+        text = element_text(size = 8),
+        axis.title.x = element_blank(),
+        legend.position = "bottom",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(colour = "black"),
+        axis.text = element_text(size = 8),
+        axis.title = element_text(size = 8),
+        legend.title = element_text(size = 8),
+        legend.text = element_text(size = 8),
+        strip.text.x = element_text(size = 8)) +
+  labs(fill = "Method Occurrence")
+
+
+p1
+ggsave(p1, file = paste0("../Features_best_models_3models_reg.pdf"), width = 4, height = 2)
+```
+
+```{r}
+cols_modality <- c("FACS" = "#c01c2c",
+                   "OLINK" = "#2e3e9b",
+                   "CyTOF" = "#5e2590",
+                   "CyTOF a4b7" = "#ab43a8",
+                   "Clinical" = "#656565")
+
+combined_features <- rbind(feature_info_OLINK_FACS, feature_info_FACS_CyTOF_Clinical, feature_info_OLINK_FACS_CyTOF)
+
+
+p1 <- combined_features %>%
+  mutate(absCoef = abs(Coefficient)) %>%
+  mutate(DataSet = factor(gsub(pattern = "_", replacement = "\n", DataSet))) %>%
+  mutate(Feature = gsub(pattern = "_FACS|_A4B7", replacement = "", Feature)) %>%
+  mutate(Feature = gsub(pattern = "[.]", replacement = " ", Feature)) %>%
+  mutate(DataSet = factor(gsub(pattern = "_", replacement = "\n", DataSet), levels = c("OLINK+FACS", "OLINK+FACS+CyTOF", "FACS+CyTOF+Clinical"))) %>%
+  group_by(DataSet) %>%
+  mutate(z_score_group = scale(absCoef)) %>%
+  droplevels() %>%
+  arrange(Origin, Feature) %>%
+  mutate(Feature = factor(Feature, levels = c(order_of_features))) %>%
+  ggplot(aes(x = Feature, y = z_score_group)) +
+  geom_hline(yintercept = 0, color = "grey") +
+  geom_boxplot(width = 0.5, outlier.size = 0.4) +
+  ylab("Feature Importance") +
+  xlab("Features") +
+  scale_fill_manual(values = cols_modality) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+        text = element_text(size = 8)) +
+  theme(axis.title.x = element_blank(),
+        legend.position = "bottom",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(colour = "black"),
+        axis.text = element_text(
+          size = 8),
+        axis.title = element_text(size = 8),
+        legend.title = element_text(size = 8),
+        legend.text = element_text(size = 8),
+        axis.text.x = element_text(size = 8),
+        strip.text.x = element_text(size = 8))
+p1
+
+p2 <- combined_features %>%
+  mutate(absCoef = abs(Coefficient)) %>%
+  mutate(DataSet = factor(gsub(pattern = "_", replacement = "+", DataSet))) %>%
+  mutate(Feature = gsub(pattern = "_FACS|_A4B7", replacement = "", Feature)) %>%
+  mutate(Feature = gsub(pattern = "[.]", replacement = " ", Feature)) %>%
+  mutate(DataSet = factor(gsub(pattern = "_", replacement = "\n", DataSet), levels = c("OLINK+FACS", "OLINK+FACS+CyTOF", "FACS+CyTOF+Clinical"))) %>%
+  mutate(Feature = gsub(Feature, pattern = "CD4mem_", replacement = "")) %>%
+  dplyr::count(Feature, DataSet, Origin) %>%
+  mutate(n_norm = n / 10) %>%
+  arrange(Origin) %>%
+  droplevels() %>%
+  mutate(Feature = factor(Feature, levels = order_of_features)) %>%
+  ggplot(aes(x = Feature, y = DataSet)) +
+  geom_point(size = 3) +
+  scale_color_manual(values = cols_modality) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+        text = element_text(size = 8)) +
+  theme(axis.title.x = element_blank(),
+        legend.position = "bottom",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(colour = "black"),
+        axis.text = element_text(
+          size = 8),
+        axis.title = element_text(size = 8),
+        legend.title = element_text(size = 8),
+        legend.text = element_text(size = 8),
+        axis.text.x = element_text(size = 8),
+        strip.text.x = element_text(size = 8))
+
+p1 <- p1 +
+  theme(axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.position = "none")
+
+p3 <- cowplot::plot_grid(p1, p2, labels = c('', ''), rows = 2, rel_heights = c(0.9, 0.8), align = 'v')
+p3
+ggsave(p3, file = paste0("../Features_best_models_3models.pdf"), width = 4, height = 2.5)
+```
+
+```{r}
+sessionInfo()
+```
+
+
